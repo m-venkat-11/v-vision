@@ -1,0 +1,364 @@
+/**
+ * Timeline Builder
+ * 
+ * Transforms raw GDB execution steps into structured timeline events
+ * matching the complete VisualCode event schema.
+ */
+
+import { generateExplanation } from './whyEngine.js';
+
+export const EventType = {
+  VARIABLE_CREATED: 'VARIABLE_CREATED',
+  VARIABLE_CHANGED: 'VARIABLE_CHANGED',
+  ARRAY_ACCESS: 'ARRAY_ACCESS',
+  ARRAY_CHANGED: 'ARRAY_CHANGED',
+  POINTER_CREATED: 'POINTER_CREATED',
+  POINTER_REASSIGNED: 'POINTER_REASSIGNED',
+  POINTER_DEREFERENCE: 'POINTER_DEREFERENCE',
+  STRUCT_CREATED: 'STRUCT_CREATED',
+  STRUCT_FIELD_CHANGED: 'STRUCT_FIELD_CHANGED',
+  FUNCTION_CALLED: 'FUNCTION_CALLED',
+  FUNCTION_RETURNED: 'FUNCTION_RETURNED',
+  RECURSIVE_CALL: 'RECURSIVE_CALL',
+  LOOP_STARTED: 'LOOP_STARTED',
+  LOOP_ITERATION: 'LOOP_ITERATION',
+  LOOP_ENDED: 'LOOP_ENDED',
+  CONDITION_CHECKED: 'CONDITION_CHECKED',
+  HEAP_ALLOCATED: 'HEAP_ALLOCATED',
+  HEAP_FREED: 'HEAP_FREED',
+  PROGRAM_END: 'PROGRAM_END',
+  RUNTIME_ERROR: 'RUNTIME_ERROR',
+  STATEMENT: 'STATEMENT'
+};
+
+/**
+ * Build structured timeline events from raw GDB steps
+ */
+export function buildTimeline(rawSteps, sourceLines, heapState) {
+  if (!rawSteps || rawSteps.length === 0) return [];
+
+  const timeline = [];
+  let prevStep = null;
+  let loopStack = [];
+  let seenLoopLines = new Set();
+  let stepCounter = 0;
+
+  for (let i = 0; i < rawSteps.length; i++) {
+    const raw = rawSteps[i];
+    const { line, sourceLine, variables, arrays, structs, pointers, callStack, callDepth, function: funcName } = raw;
+
+    // Check for runtime error step
+    if (raw.isRuntimeError) {
+      const errEvent = {
+        step: stepCounter++,
+        line,
+        function: funcName || 'main',
+        callDepth: callDepth || 1,
+        callStack: callStack || [],
+        sourceLine: sourceLine || '',
+        eventType: EventType.RUNTIME_ERROR,
+        runtimeError: raw.runtimeError || 'Segmentation Fault / Runtime Crash',
+        variables: { ...variables },
+        arrays: { ...arrays },
+        structs: { ...structs },
+        pointers: { ...pointers },
+        heapAllocations: raw.heapAllocations || [],
+        highlight: {},
+        why: `CRASH: ${raw.runtimeError}. Likely accessing invalid memory or exceeding recursion limit.`
+      };
+      timeline.push(errEvent);
+      break;
+    }
+
+    // Skip blank or comment lines
+    if (!sourceLine || sourceLine.startsWith('//') || sourceLine === '{' || sourceLine === '}') {
+      continue;
+    }
+
+    const prevVars = prevStep?.variables || {};
+    const prevArr = prevStep?.arrays || {};
+    const prevStructs = prevStep?.structs || {};
+    const prevPointers = prevStep?.pointers || {};
+    const prevDepth = prevStep?.callDepth || 1;
+    const prevFunc = prevStep?.function || 'main';
+
+    // Diffs
+    const changedVars = diffVariables(prevVars, variables);
+    const newVars = findNewKeys(prevVars, variables);
+
+    const changedArrays = diffArrays(prevArr, arrays);
+    const newArrays = findNewKeys(prevArr, arrays);
+
+    const changedStructs = diffStructs(prevStructs, structs);
+    const newStructs = findNewKeys(prevStructs, structs);
+
+    const changedPointers = diffPointers(prevPointers, pointers);
+    const newPointers = findNewKeys(prevPointers, pointers);
+
+    // Classify Event
+    let eventType = EventType.STATEMENT;
+
+    // 1. Function Call / Return / Recursion
+    if (callDepth > prevDepth) {
+      if (funcName === prevFunc) {
+        eventType = EventType.RECURSIVE_CALL;
+      } else {
+        eventType = EventType.FUNCTION_CALLED;
+      }
+    } else if (callDepth < prevDepth) {
+      eventType = EventType.FUNCTION_RETURNED;
+    }
+    // 2. Heap allocation / Free
+    else if (/malloc|calloc/.test(sourceLine)) {
+      eventType = EventType.HEAP_ALLOCATED;
+    } else if (/free\s*\(/.test(sourceLine)) {
+      eventType = EventType.HEAP_FREED;
+    }
+    // 3. Pointer dereference & pointer changes
+    else if (/\*\s*\w+/.test(sourceLine) && (changedVars.length > 0 || sourceLine.includes('*'))) {
+      eventType = EventType.POINTER_DEREFERENCE;
+    } else if (changedPointers.length > 0) {
+      eventType = EventType.POINTER_REASSIGNED;
+    } else if (newPointers.length > 0) {
+      eventType = EventType.POINTER_CREATED;
+    }
+    // 4. Struct changes
+    else if (changedStructs.length > 0) {
+      eventType = EventType.STRUCT_FIELD_CHANGED;
+    } else if (newStructs.length > 0) {
+      eventType = EventType.STRUCT_CREATED;
+    }
+    // 5. Loops
+    else if (/^(for|while)\s*\(/.test(sourceLine.trim())) {
+      if (seenLoopLines.has(line)) {
+        eventType = EventType.LOOP_ITERATION;
+      } else {
+        seenLoopLines.add(line);
+        eventType = EventType.LOOP_STARTED;
+      }
+    }
+    // 6. Conditions
+    else if (/^(if|else\s+if)\s*\(/.test(sourceLine.trim())) {
+      eventType = EventType.CONDITION_CHECKED;
+    }
+    // 7. Arrays
+    else if (changedArrays.length > 0) {
+      eventType = EventType.ARRAY_CHANGED;
+    } else if (/\w+\[[^\]]+\]/.test(sourceLine)) {
+      eventType = EventType.ARRAY_ACCESS;
+    }
+    // 8. Variable Created / Changed
+    else if (newVars.length > 0 && /^(int|float|double|char)\s+/.test(sourceLine.trim())) {
+      eventType = EventType.VARIABLE_CREATED;
+    } else if (changedVars.length > 0) {
+      eventType = EventType.VARIABLE_CHANGED;
+    }
+
+    // Condition Evaluation
+    let conditionResult = null;
+    if (eventType === EventType.CONDITION_CHECKED) {
+      const nextStep = (i + 1 < rawSteps.length) ? rawSteps[i + 1] : null;
+      conditionResult = evaluateConditionBranch(sourceLine, variables, arrays, nextStep, line);
+    }
+
+    // Update loop tracking
+    updateLoopStack(eventType, sourceLine, loopStack);
+
+    // Array highlight calculation
+    const highlight = buildArrayHighlight(sourceLine, variables, arrays);
+
+    const event = {
+      step: stepCounter++,
+      line,
+      function: funcName,
+      callDepth,
+      callStack: callStack.map(f => ({ ...f })),
+      sourceLine,
+      eventType,
+      variables: { ...variables },
+      arrays: { ...arrays },
+      structs: { ...structs },
+      pointers: { ...pointers },
+      heapAllocations: raw.heapAllocations || [],
+      highlight,
+      ...(conditionResult !== null && { conditionResult }),
+      ...(changedVars.length > 0 && { changes: changedVars }),
+      ...(newVars.length > 0 && { newVariables: newVars }),
+      ...(changedArrays.length > 0 && { arrayChanges: changedArrays }),
+      ...(changedStructs.length > 0 && { structChanges: changedStructs }),
+      ...(changedPointers.length > 0 && { pointerChanges: changedPointers }),
+      ...(loopStack.length > 0 && {
+        loopState: {
+          depth: loopStack.length,
+          currentLoop: { ...loopStack[loopStack.length - 1] }
+        }
+      })
+    };
+
+    // Generate Why Explanation
+    event.why = generateExplanation(event, prevVars, prevArr, prevStructs, prevPointers);
+
+    timeline.push(event);
+    prevStep = raw;
+  }
+
+  // Add final PROGRAM_END event if not present
+  if (timeline.length > 0 && timeline[timeline.length - 1].eventType !== EventType.PROGRAM_END && timeline[timeline.length - 1].eventType !== EventType.RUNTIME_ERROR) {
+    const last = timeline[timeline.length - 1];
+    
+    // Check for memory leaks
+    const unFreedBlocks = (last.heapAllocations || []).filter(a => !a.freed);
+
+    timeline.push({
+      step: stepCounter++,
+      line: last.line,
+      function: 'main',
+      callDepth: 1,
+      callStack: [{ level: 0, func: 'main', line: last.line }],
+      sourceLine: 'return 0;',
+      eventType: EventType.PROGRAM_END,
+      variables: { ...last.variables },
+      arrays: { ...last.arrays },
+      structs: { ...last.structs },
+      pointers: { ...last.pointers },
+      heapAllocations: last.heapAllocations || [],
+      memoryLeaks: unFreedBlocks,
+      highlight: {},
+      why: unFreedBlocks.length > 0 
+        ? `Program ended with ${unFreedBlocks.length} unfreed heap memory block(s) (Memory Leak Warning!).`
+        : `Program successfully finished execution with return 0.`
+    });
+  }
+
+  return timeline;
+}
+
+function diffVariables(prev, cur) {
+  const diffs = [];
+  for (const [k, v] of Object.entries(cur)) {
+    if (k in prev && prev[k] !== v && typeof v !== 'object') {
+      diffs.push({ name: k, from: prev[k], to: v });
+    }
+  }
+  return diffs;
+}
+
+function findNewKeys(prev, cur) {
+  return Object.keys(cur).filter(k => !(k in prev));
+}
+
+function diffArrays(prev, cur) {
+  const diffs = [];
+  for (const [name, arr] of Object.entries(cur)) {
+    if (name in prev) {
+      const pArr = prev[name];
+      if (Array.isArray(arr)) {
+        for (let i = 0; i < arr.length; i++) {
+          if (Array.isArray(arr[i])) {
+            // 2D array
+            for (let j = 0; j < arr[i].length; j++) {
+              if (pArr[i] && pArr[i][j] !== arr[i][j]) {
+                diffs.push({ array: name, row: i, col: j, from: pArr[i][j], to: arr[i][j] });
+              }
+            }
+          } else if (pArr[i] !== arr[i]) {
+            diffs.push({ array: name, index: i, from: pArr[i], to: arr[i] });
+          }
+        }
+      }
+    }
+  }
+  return diffs;
+}
+
+function diffStructs(prev, cur) {
+  const diffs = [];
+  for (const [name, fields] of Object.entries(cur)) {
+    if (name in prev && typeof fields === 'object') {
+      const pFields = prev[name];
+      for (const [fName, fVal] of Object.entries(fields)) {
+        if (pFields && pFields[fName] !== fVal) {
+          diffs.push({ struct: name, field: fName, from: pFields[fName], to: fVal });
+        }
+      }
+    }
+  }
+  return diffs;
+}
+
+function diffPointers(prev, cur) {
+  const diffs = [];
+  for (const [name, p] of Object.entries(cur)) {
+    if (name in prev) {
+      const prevP = prev[name];
+      if (prevP.targetAddress !== p.targetAddress) {
+        diffs.push({ name, from: prevP.targetAddress, to: p.targetAddress, pointsToVar: p.pointsToVar });
+      }
+    }
+  }
+  return diffs;
+}
+
+function buildArrayHighlight(sourceLine, variables, arrays) {
+  const highlight = {};
+  if (!sourceLine) return highlight;
+
+  const accessPattern = /(\w+)\[([^\]]+)\]/g;
+  let match;
+  while ((match = accessPattern.exec(sourceLine)) !== null) {
+    const arrName = match[1];
+    const indexExpr = match[2].trim();
+
+    if (arrName in arrays) {
+      const idx = evaluateIndex(indexExpr, variables);
+      if (idx !== null) {
+        if (!highlight.array) {
+          highlight.array = arrName;
+          highlight.indices = [];
+        }
+        if (highlight.array === arrName && !highlight.indices.includes(idx)) {
+          highlight.indices.push(idx);
+        }
+      }
+    }
+  }
+
+  return highlight;
+}
+
+function evaluateIndex(expr, vars) {
+  if (/^\d+$/.test(expr)) return parseInt(expr, 10);
+  if (expr in vars && typeof vars[expr] === 'number') return vars[expr];
+  const mAdd = expr.match(/^(\w+)\s*\+\s*(\d+)$/);
+  if (mAdd && mAdd[1] in vars) return vars[mAdd[1]] + parseInt(mAdd[2], 10);
+  const mSub = expr.match(/^(\w+)\s*-\s*(\d+)$/);
+  if (mSub && mSub[1] in vars) return vars[mSub[1]] - parseInt(mSub[2], 10);
+  return null;
+}
+
+function evaluateConditionBranch(sourceLine, variables, arrays, nextStep, currentLine) {
+  if (nextStep) {
+    if (nextStep.line === currentLine + 1) return true;
+    if (nextStep.line > currentLine + 1) return false;
+  }
+  return null;
+}
+
+function updateLoopStack(eventType, sourceLine, loopStack) {
+  if (eventType === EventType.LOOP_STARTED) {
+    let loopVar = null;
+    const forMatch = sourceLine.match(/for\s*\(\s*(?:int\s+)?(\w+)/);
+    if (forMatch) loopVar = forMatch[1];
+
+    loopStack.push({
+      type: sourceLine.trim().startsWith('while') ? 'while' : 'for',
+      variable: loopVar,
+      iteration: 0,
+      condition: sourceLine.match(/\((.+)\)/)?.[1] || ''
+    });
+  } else if (eventType === EventType.LOOP_ITERATION && loopStack.length > 0) {
+    loopStack[loopStack.length - 1].iteration++;
+  } else if (eventType === EventType.LOOP_ENDED && loopStack.length > 0) {
+    loopStack.pop();
+  }
+}

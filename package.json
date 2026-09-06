@@ -1,0 +1,24 @@
+{
+  "name": "v-vision",
+  "version": "2.0.0",
+  "private": true,
+  "description": "V-VISION — Live Interactive C Code Execution Visualizer",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "dev:backend": "node backend/src/index.js",
+    "build": "npm run build --prefix frontend",
+    "start": "node backend/src/index.js"
+  },
+  "keywords": [
+    "c",
+    "gdb",
+    "visualizer",
+    "execution-visualizer",
+    "memory-animation",
+    "recursion",
+    "pointers",
+    "data-structures"
+  ],
+  "author": "M.Venkat",
+  "license": "MIT"
+}
