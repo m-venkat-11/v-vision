@@ -7,7 +7,10 @@ import { useTimelinePlayer } from './hooks/useTimelinePlayer';
 import { EXAMPLE_PROGRAMS } from './data/examples';
 import { Sparkles, Code2, Columns2, Rows2, RotateCcw, Cpu, BookOpen } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const RAW_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = RAW_API_URL.replace(/\/+$/, '').endsWith('/api')
+  ? RAW_API_URL.replace(/\/+$/, '')
+  : `${RAW_API_URL.replace(/\/+$/, '')}/api`;
 
 function App() {
   const [selectedExampleId, setSelectedExampleId] = useState(EXAMPLE_PROGRAMS[0].id);
