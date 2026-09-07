@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { CheckCircle2 } from 'lucide-react';
 import ArrayView from './ArrayView';
 import VariableView from './VariableView';
@@ -8,8 +8,6 @@ import StructView from './StructView';
 import StackDiagramView from './StackDiagramView';
 import HeapView from './HeapView';
 import LoopConditionStrip from './LoopConditionStrip';
-import LoopView from './LoopView';
-import ConditionView from './ConditionView';
 import ChartsPanel from './ChartsPanel';
 
 export default function VisualizationCanvas({
@@ -66,22 +64,7 @@ export default function VisualizationCanvas({
 
   return (
     <div className="canvas-view-wrap">
-      {/* Persistent Loop & Condition Status Strip */}
-      <LoopConditionStrip event={event} />
-
-      {/* Dynamic Condition Evaluation Breakdown */}
-      <AnimatePresence mode="wait">
-        {eventType === 'CONDITION_CHECKED' && (
-          <ConditionView event={event} animationDuration={animationDuration} />
-        )}
-      </AnimatePresence>
-
-      {/* Active Loop Cycle Radar */}
-      {(eventType === 'LOOP_STARTED' || eventType === 'LOOP_ITERATION') && (
-        <LoopView event={event} animationDuration={animationDuration} />
-      )}
-
-      {/* 1D & 2D Arrays View */}
+      {/* 1D & 2D Arrays View — Pinned at the top for rock-solid vertical stability */}
       {hasArrays && (
         <ArrayView
           arrays={arrays}
@@ -92,6 +75,9 @@ export default function VisualizationCanvas({
           pointerVars={pointerVars}
         />
       )}
+
+      {/* Persistent Loop & Condition Status Strip — Smooth single-line indicator */}
+      <LoopConditionStrip event={event} />
 
       {/* Pointers & Memory Links */}
       {hasPointers && (
@@ -154,7 +140,7 @@ export default function VisualizationCanvas({
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
+          transition={{ duration: 0.3 }}
           className="program-end-banner"
         >
           <div className="end-icon-badge">

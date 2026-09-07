@@ -1,25 +1,17 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Compass, ArrowRight, Sparkles } from 'lucide-react';
-import { springStandard, springSnappy, scaledSpring } from '../animationConfig.js';
 
 /**
  * PointerView — spring physics, hover tooltip showing address + dereferenced value.
  */
-export default function PointerView({ pointers, variables, event, animationDuration, speed = 1 }) {
+export default function PointerView({ pointers, variables, event }) {
   if (!pointers || Object.keys(pointers).length === 0) return null;
 
   const isDeref = event?.eventType === 'POINTER_DEREFERENCE';
-  const springCfg = scaledSpring(speed, springStandard);
 
   return (
-    <motion.div
-      className="pointer-view-card"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={springCfg}
-      layout
-    >
+    <div className="pointer-view-card">
       <div className="section-subtitle">
         <Compass size={14} className="section-icon" />
         <span>Pointers & Memory Addresses</span>
@@ -27,44 +19,36 @@ export default function PointerView({ pointers, variables, event, animationDurat
       </div>
 
       <div className="pointer-grid">
-        <AnimatePresence mode="popLayout">
-          {Object.entries(pointers).map(([name, ptr]) => {
-            const pointsTo = ptr.pointsToVar;
-            const targetVal = pointsTo && variables && variables[pointsTo] !== undefined
-              ? variables[pointsTo]
-              : (ptr.dereferencedValue !== null ? ptr.dereferencedValue : '—');
-            const isNull = !ptr.targetAddress || ptr.targetAddress === '0x0';
+        {Object.entries(pointers).map(([name, ptr]) => {
+          const pointsTo = ptr.pointsToVar;
+          const targetVal = pointsTo && variables && variables[pointsTo] !== undefined
+            ? variables[pointsTo]
+            : (ptr.dereferencedValue !== null ? ptr.dereferencedValue : '—');
+          const isNull = !ptr.targetAddress || ptr.targetAddress === '0x0';
 
-            return (
-              <PointerCard
-                key={name}
-                name={name}
-                ptr={ptr}
-                pointsTo={pointsTo}
-                targetVal={targetVal}
-                isNull={isNull}
-                isDeref={isDeref}
-                springCfg={springCfg}
-              />
-            );
-          })}
-        </AnimatePresence>
+          return (
+            <PointerCard
+              key={name}
+              name={name}
+              ptr={ptr}
+              pointsTo={pointsTo}
+              targetVal={targetVal}
+              isNull={isNull}
+              isDeref={isDeref}
+            />
+          );
+        })}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-function PointerCard({ name, ptr, pointsTo, targetVal, isNull, isDeref, springCfg }) {
+function PointerCard({ name, ptr, pointsTo, targetVal, isNull, isDeref }) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
-    <motion.div
+    <div
       className={`pointer-item-box ${isDeref ? 'is-dereferencing' : ''}`}
-      initial={{ opacity: 0, scale: 0.9, y: 6 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={springCfg}
-      layout
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
       style={{ position: 'relative' }}
@@ -120,6 +104,6 @@ function PointerCard({ name, ptr, pointsTo, targetVal, isNull, isDeref, springCf
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

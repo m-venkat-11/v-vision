@@ -1,16 +1,14 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  Layers, Columns2, ArrowDown, GitCompare, Grid3X3, Info
-} from 'lucide-react';
+import { Layers, ArrowDown, GitCompare, Grid3X3 } from 'lucide-react';
 import { springStandard, springSnappy, scaledSpring, CELL_COLORS, getPointerColor } from '../animationConfig.js';
 
 /**
  * ArrayView — Enhanced with:
- * - Spring physics transitions (not linear tweens)
- * - Phased per-step animations: highlight → compare → change → settle
- * - Persistent "trail" indicators for visited loop cells
- * - Hover tooltip showing index, value, hex offset
+ * - Stable spring transitions (no repetitive scale bouncing or popLayout flicker)
+ * - Single-value scale targets for rock-solid stability
+ * - Persistent loop trail indicators
+ * - Interactive hover tooltips
  */
 
 export default function ArrayView({
@@ -18,10 +16,10 @@ export default function ArrayView({
   highlight,
   changes,
   variables,
-  animationDuration,
+  animationDuration = 500,
   pointerVars,
   speed = 1,
-  loopTrails = {},   // { arrayName: Set<number> } — cells visited in the current loop
+  loopTrails = {},
 }) {
   if (!arrays || Object.keys(arrays).length === 0) return null;
 
@@ -39,14 +37,16 @@ export default function ArrayView({
         const trails = loopTrails?.[name] instanceof Set ? loopTrails[name] : null;
 
         if (is2D) {
-          return <Matrix2D
-            key={name}
-            name={name}
-            valMatrix={valMatrix}
-            changes={changes}
-            springCfg={springCfg}
-            animationDuration={animationDuration}
-          />;
+          return (
+            <Matrix2D
+              key={name}
+              name={name}
+              valMatrix={valMatrix}
+              changes={changes}
+              springCfg={springCfg}
+              animationDuration={animationDuration}
+            />
+          );
         }
 
         return (
@@ -71,15 +71,20 @@ export default function ArrayView({
 
 // ─── 1D Array ────────────────────────────────────────────────────────────────
 
-function Array1D({ name, values, highlightedIndices, isComparingPair, changes, pointerVars, trails, springCfg, snapCfg, animationDuration }) {
+function Array1D({
+  name,
+  values,
+  highlightedIndices,
+  isComparingPair,
+  changes,
+  pointerVars,
+  trails,
+  springCfg,
+  snapCfg,
+  animationDuration
+}) {
   return (
-    <motion.div
-      className="array-card"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={springCfg}
-      layout
-    >
+    <div className="array-card">
       <div className="array-card-header">
         <div className="array-identity">
           <div className="array-icon-pill">
@@ -99,7 +104,7 @@ function Array1D({ name, values, highlightedIndices, isComparingPair, changes, p
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              transition={snapCfg}
+              transition={{ duration: 0.15 }}
             >
               <GitCompare size={12} />
               <span>Comparing [{highlightedIndices[0]}] & [{highlightedIndices[1]}]</span>
@@ -128,13 +133,13 @@ function Array1D({ name, values, highlightedIndices, isComparingPair, changes, p
             const hexOffset = (idx * 4).toString(16).toUpperCase().padStart(2, '0');
 
             let cellColor = CELL_COLORS.normal;
-            if (isChanged)     cellColor = CELL_COLORS.changed;
+            if (isChanged) cellColor = CELL_COLORS.changed;
             else if (isComparingPair && isHighlighted) cellColor = CELL_COLORS.compare;
             else if (isHighlighted) cellColor = CELL_COLORS.highlight;
 
             return (
               <div className="array-cell-slot" key={idx}>
-                {/* Pointer flag indicators */}
+                {/* Pointer flag indicators with fixed track height */}
                 <div className="array-pointer-track">
                   <AnimatePresence>
                     {pointersHere.map(pName => {
@@ -148,11 +153,10 @@ function Array1D({ name, values, highlightedIndices, isComparingPair, changes, p
                             borderColor: colorScheme.border,
                             color: colorScheme.text
                           }}
-                          initial={{ opacity: 0, y: -6, scale: 0.8 }}
+                          initial={{ opacity: 0, y: -4, scale: 0.85 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -6, scale: 0.8 }}
-                          transition={springCfg}
-                          layout
+                          exit={{ opacity: 0, y: -4, scale: 0.85 }}
+                          transition={{ duration: 0.15 }}
                         >
                           <span>{pName}</span>
                           <ArrowDown size={10} strokeWidth={2.5} />
@@ -162,7 +166,7 @@ function Array1D({ name, values, highlightedIndices, isComparingPair, changes, p
                   </AnimatePresence>
                 </div>
 
-                {/* Cell box with spring physics */}
+                {/* Cell box with smooth, non-flickering state scaling */}
                 <CellBox
                   val={val}
                   isHighlighted={isHighlighted}
@@ -187,13 +191,23 @@ function Array1D({ name, values, highlightedIndices, isComparingPair, changes, p
           })}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
 // ─── Individual Cell ──────────────────────────────────────────────────────────
 
-function CellBox({ val, isHighlighted, isChanged, isTrail, change, cellColor, springCfg, snapCfg, animationDuration, idx, hexOffset }) {
+function CellBox({
+  val,
+  isHighlighted,
+  isChanged,
+  isTrail,
+  change,
+  cellColor,
+  springCfg,
+  idx,
+  hexOffset
+}) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   let boxClass = 'array-cell-box';
@@ -217,23 +231,13 @@ function CellBox({ val, isHighlighted, isChanged, isTrail, change, cellColor, sp
           boxShadow: `0 0 12px ${cellColor.bg}`,
         } : {}}
         animate={{
-          scale: isChanged ? [1, 1.15, 1] : isHighlighted ? [1, 1.07, 1] : 1,
+          scale: isChanged ? 1.08 : isHighlighted ? 1.04 : 1,
         }}
-        transition={isChanged ? { ...springCfg, delay: 0.05 } : springCfg}
-        layout
+        transition={springCfg}
       >
-        <AnimatePresence mode="popLayout">
-          <motion.span
-            key={val}
-            className="cell-number"
-            initial={{ opacity: 0, scale: 0.4, y: 4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.4, y: -4 }}
-            transition={snapCfg}
-          >
-            {val}
-          </motion.span>
-        </AnimatePresence>
+        <span className="cell-number">
+          {val}
+        </span>
 
         {/* Change delta pill */}
         {isChanged && change && (
@@ -241,7 +245,7 @@ function CellBox({ val, isHighlighted, isChanged, isTrail, change, cellColor, sp
             className="cell-diff-pill"
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 30, delay: 0.1 }}
+            transition={{ duration: 0.15 }}
           >
             {change.from} → {change.to}
           </motion.div>
@@ -266,6 +270,7 @@ function CellBox({ val, isHighlighted, isChanged, isTrail, change, cellColor, sp
             <div className="tt-row"><span className="tt-label">index:</span><span className="tt-val">[{idx}]</span></div>
             <div className="tt-row"><span className="tt-label">value:</span><span className="tt-val">{val}</span></div>
             <div className="tt-row"><span className="tt-label">offset:</span><span className="tt-val">+0x{hexOffset}</span></div>
+            <div className="tt-row"><span className="tt-label">bytes:</span><span className="tt-val">sizeof(int) = 4B</span></div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -273,20 +278,14 @@ function CellBox({ val, isHighlighted, isChanged, isTrail, change, cellColor, sp
   );
 }
 
-// ─── 2D Matrix ────────────────────────────────────────────────────────────────
+// ─── 2D Matrix Array ─────────────────────────────────────────────────────────
 
 function Matrix2D({ name, valMatrix, changes, springCfg, animationDuration }) {
   const numRows = valMatrix.length;
   const numCols = valMatrix[0]?.length || 0;
 
   return (
-    <motion.div
-      className="array-card matrix-card"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={springCfg}
-      layout
-    >
+    <div className="array-card matrix-card">
       <div className="array-card-header">
         <div className="array-identity">
           <div className="array-icon-pill">
@@ -323,22 +322,13 @@ function Matrix2D({ name, valMatrix, changes, springCfg, animationDuration }) {
                       <motion.div
                         className={`matrix-cell-box ${cellChange ? 'changed' : ''}`}
                         animate={{
-                          scale: cellChange ? [1, 1.15, 1] : 1,
-                          background: cellChange ? ['rgba(16,185,129,0.3)', 'rgba(16,185,129,0.12)'] : undefined,
+                          scale: cellChange ? 1.08 : 1,
                         }}
-                        transition={{ ...springCfg, delay: cellChange ? 0.05 : 0 }}
+                        transition={springCfg}
                       >
-                        <AnimatePresence mode="popLayout">
-                          <motion.span
-                            key={cellVal}
-                            initial={{ opacity: 0, scale: 0.5 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.5 }}
-                            transition={{ duration: animationDuration / 1400 }}
-                          >
-                            {cellVal}
-                          </motion.span>
-                        </AnimatePresence>
+                        <span className="matrix-cell-value">
+                          {cellVal}
+                        </span>
                       </motion.div>
                     </td>
                   );
@@ -348,6 +338,6 @@ function Matrix2D({ name, valMatrix, changes, springCfg, animationDuration }) {
           </tbody>
         </table>
       </div>
-    </motion.div>
+    </div>
   );
 }

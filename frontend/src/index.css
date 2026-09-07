@@ -837,6 +837,7 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 18px;
+  min-height: 28px;
 }
 
 .array-identity {
@@ -926,6 +927,7 @@ body {
   gap: 3px;
   z-index: 5;
   pointer-events: none;
+  min-height: 22px;
 }
 
 .cell-pointer-flag {
@@ -952,7 +954,7 @@ body {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   position: relative;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .array-cell-box.highlighted {
