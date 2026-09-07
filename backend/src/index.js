@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import { executeRoute } from './routes/execute.js';
+import { summarizeRoute } from './routes/summarize.js';
+import { explainProblemRoute } from './routes/explainProblem.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -11,6 +13,8 @@ app.use(express.json({ limit: '1mb' }));
 
 // Routes
 app.use('/api', executeRoute);
+app.use('/api', summarizeRoute);
+app.use('/api', explainProblemRoute);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -28,5 +32,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`VisualCode backend running on http://localhost:${PORT}`);
+  console.log(`V-VISION backend running on http://localhost:${PORT}`);
 });

@@ -1,14 +1,14 @@
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, RotateCcw, ZoomIn, ZoomOut, CircleDot, Sparkles } from 'lucide-react';
+import { Play, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 
 export default function CodeEditor({ 
   code, 
   onCodeChange, 
   highlightLine, 
-  readOnly, 
-  onVisualize, 
+  isPlaying,     // ← only read-only when ACTIVELY playing
   isLoading,
+  onVisualize, 
   breakpoints = new Set(),
   onToggleBreakpoint,
   currentEvent
@@ -23,58 +23,57 @@ export default function CodeEditor({
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    // Define ultra-clean modern dark developer theme
+    // Rich dark theme
     monaco.editor.defineTheme('visualcode-dark-pro', {
       base: 'vs-dark',
       inherit: true,
       rules: [
-        { token: 'comment', foreground: '6272a4', fontStyle: 'italic' },
-        { token: 'keyword', foreground: '818cf8', fontStyle: 'bold' },
+        { token: 'comment',         foreground: '6272a4', fontStyle: 'italic' },
+        { token: 'keyword',         foreground: '818cf8', fontStyle: 'bold' },
         { token: 'keyword.control', foreground: 'c084fc', fontStyle: 'bold' },
-        { token: 'number', foreground: 'fbbf24' },
-        { token: 'string', foreground: '34d399' },
-        { token: 'type', foreground: '38bdf8', fontStyle: 'bold' },
-        { token: 'identifier', foreground: 'f1f5f9' },
-        { token: 'delimiter', foreground: '94a3b8' },
-        { token: 'operator', foreground: 'f472b6' },
+        { token: 'number',          foreground: 'fbbf24' },
+        { token: 'string',          foreground: '34d399' },
+        { token: 'type',            foreground: '38bdf8', fontStyle: 'bold' },
+        { token: 'identifier',      foreground: 'f1f5f9' },
+        { token: 'delimiter',       foreground: '94a3b8' },
+        { token: 'operator',        foreground: 'f472b6' },
       ],
       colors: {
-        'editor.background': '#090a12',
-        'editor.foreground': '#f1f5f9',
-        'editor.lineHighlightBackground': '#14172b',
-        'editorLineNumber.foreground': '#475569',
-        'editorLineNumber.activeForeground': '#a5b4fc',
-        'editorGutter.background': '#07080f',
-        'editor.selectionBackground': '#6366f140',
-        'editor.inactiveSelectionBackground': '#6366f11f',
-        'editorCursor.foreground': '#818cf8',
-        'scrollbar.shadow': '#00000000',
-        'editorScrollbar.background': '#00000000',
+        'editor.background':                '#090a12',
+        'editor.foreground':                '#f1f5f9',
+        'editor.lineHighlightBackground':   '#14172b',
+        'editorLineNumber.foreground':      '#475569',
+        'editorLineNumber.activeForeground':'#a5b4fc',
+        'editorGutter.background':          '#07080f',
+        'editor.selectionBackground':       '#6366f140',
+        'editor.inactiveSelectionBackground':'#6366f11f',
+        'editorCursor.foreground':          '#818cf8',
+        'scrollbar.shadow':                 '#00000000',
+        'editorScrollbar.background':       '#00000000',
         'editorScrollbar.sliderBackground': '#33415533',
         'editorScrollbar.sliderHoverBackground': '#47556966',
       }
     });
-
     monaco.editor.setTheme('visualcode-dark-pro');
 
-    // Handle gutter click for breakpoints
+    // Gutter click → toggle breakpoint
     editor.onMouseDown((e) => {
-      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
-          e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS) {
+      if (
+        e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
+        e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS
+      ) {
         const line = e.target.position?.lineNumber;
-        if (line && onToggleBreakpoint) {
-          onToggleBreakpoint(line);
-        }
+        if (line && onToggleBreakpoint) onToggleBreakpoint(line);
       }
     });
 
-    // Keyboard shortcut: Ctrl+Enter / Cmd+Enter to visualize
+    // Ctrl+Enter → Visualize
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       onVisualize?.();
     });
   }, [onToggleBreakpoint, onVisualize]);
 
-  // Update active line highlight
+  // Execution line highlight decoration — purely visual, does NOT block editing
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -99,7 +98,7 @@ export default function CodeEditor({
     }
   }, [highlightLine]);
 
-  // Update breakpoint decorations
+  // Breakpoint decorations
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -113,16 +112,14 @@ export default function CodeEditor({
         linesDecorationsClassName: 'breakpoint-gutter-dot',
       }
     }));
-
-    breakpointDecorationsRef.current = editor.deltaDecorations(
-      breakpointDecorationsRef.current,
-      decs
-    );
+    breakpointDecorationsRef.current = editor.deltaDecorations(breakpointDecorationsRef.current, decs);
   }, [breakpoints]);
 
-  const activeVars = currentEvent?.variables ? Object.entries(currentEvent.variables)
-    .filter(([k]) => !['argc', 'argv'].includes(k))
-    .slice(0, 4) : [];
+  const activeVars = currentEvent?.variables
+    ? Object.entries(currentEvent.variables)
+        .filter(([k]) => !['argc', 'argv'].includes(k))
+        .slice(0, 4)
+    : [];
 
   return (
     <div className="panel code-panel">
@@ -136,6 +133,7 @@ export default function CodeEditor({
             <div className="active-line-badge">
               <span className="pulse-dot"></span>
               Line {highlightLine}
+              {isPlaying ? ' ▶ Playing' : ' ⏸ Paused'}
             </div>
           )}
           {breakpoints.size > 0 && (
@@ -146,18 +144,17 @@ export default function CodeEditor({
         </div>
 
         <div className="panel-actions">
-          {/* Zoom controls */}
           <div className="font-size-controls">
-            <button 
-              className="icon-btn-ghost" 
+            <button
+              className="icon-btn-ghost"
               onClick={() => setFontSize(s => Math.max(11, s - 1))}
               title="Decrease font size"
             >
               <ZoomOut size={13} />
             </button>
             <span className="font-size-label">{Math.round(fontSize)}px</span>
-            <button 
-              className="icon-btn-ghost" 
+            <button
+              className="icon-btn-ghost"
               onClick={() => setFontSize(s => Math.min(20, s + 1))}
               title="Increase font size"
             >
@@ -215,12 +212,15 @@ export default function CodeEditor({
             automaticLayout: true,
             cursorBlinking: 'smooth',
             smoothScrolling: true,
-            readOnly: readOnly || isLoading,
+            // readOnly ONLY when isPlaying — never during pause or step-by-step
+            readOnly: isLoading || isPlaying || false,
+            // Never steal focus from clipboard shortcuts
+            contextmenu: true,
           }}
           theme="visualcode-dark-pro"
         />
 
-        {/* Live execution overlay banner at bottom of editor if running */}
+        {/* Live execution overlay — shown only when visualizing */}
         {highlightLine && currentEvent && (
           <div className="editor-live-status-bar">
             <div className="editor-status-left">

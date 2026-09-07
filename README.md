@@ -85,19 +85,51 @@ v-vision/
 
 ---
 
-## ☁️ Deploying to Vercel (Automatic CI/CD)
+---
+
+## ☁️ Deployment Guide
+
+### 1. Deploy Backend to Render (Docker Web Service)
+
+Because V-VISION compiles and steps through arbitrary C code with **GCC** and **GDB**, the backend runs inside an isolated Docker container on Render.
+
+1. Go to [render.com](https://render.com) and log in.
+2. Click **"New +"** → **"Web Service"** (or use **"Blueprint"** with `render.yaml`).
+3. Connect your GitHub repository: `m-venkat-11/v-vision`.
+4. Configure the Web Service:
+   - **Name**: `v-vision-backend`
+   - **Region**: Any (e.g., Oregon)
+   - **Branch**: `main`
+   - **Root Directory**: Leave blank (or `./backend`)
+   - **Runtime**: **Docker**
+   - **Dockerfile Path**: `./backend/Dockerfile`
+   - **Docker Build Context**: `./backend`
+   - **Instance Type**: **Free**
+5. **Environment Variables**:
+   - `PORT`: `10000` (Render defaults to this)
+   - `NODE_ENV`: `production`
+   - `GEMINI_API_KEY`: *(Optional)* Your Google Gemini API key for AI summaries & Question Mode.
+6. Click **"Deploy Web Service"**.
+7. Once deployed, Render will provide your public URL:
+   `https://v-vision-backend.onrender.com`
+
+---
+
+### 2. Deploy Frontend to Vercel
 
 1. Go to [vercel.com](https://vercel.com) and log in.
-2. Click **"Add New Project"** and select **"Import Git Repository"**.
-3. Choose **`m-venkat-11/v-vision`**.
-4. Vercel automatically detects `vercel.json` and configures the build settings:
+2. Click **"Add New Project"** and import `m-venkat-11/v-vision`.
+3. Vercel automatically detects the Vite framework and `vercel.json`:
    - **Framework Preset**: Vite
-   - **Build Command**: `cd frontend && npm install && npm run build`
-   - **Output Directory**: `frontend/dist`
-5. (Optional) Set `VITE_API_URL` environment variable if your backend is hosted on Render, Railway, or a VPS.
-6. Click **Deploy**.
+   - **Root Directory**: `frontend` (or leave default with root `vercel.json`)
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+4. **Environment Variables**:
+   - Add `VITE_API_URL` = `https://v-vision-backend.onrender.com/api`
+     *(replace with your actual Render backend URL)*
+5. Click **"Deploy"**.
 
-Every commit pushed to the `main` branch on GitHub will automatically trigger a new deployment on Vercel!
+Your frontend is now live on Vercel and communicates securely with your Render backend! Every `git push` to `main` will automatically trigger fresh builds on both Vercel and Render.
 
 ---
 

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { LayoutGrid, ListTree, Terminal, Layers, AlertTriangle, Sparkles } from 'lucide-react';
+import { LayoutGrid, ListTree, Terminal, Layers, BarChart3, AlertTriangle, Sparkles } from 'lucide-react';
 import VisualizationCanvas from './VisualizationCanvas';
 import ConsoleTerminal from './ConsoleTerminal';
 import ExecutionTraceLog from './ExecutionTraceLog';
-import CallStackView from './CallStackView';
+import StackDiagramView from './StackDiagramView';
+import ChartsPanel from './ChartsPanel';
 
 export default function VisualizationPanel({ 
   event, 
@@ -14,7 +15,7 @@ export default function VisualizationPanel({
   currentStep = 0,
   onSelectStep
 }) {
-  const [activeTab, setActiveTab] = useState('canvas'); // 'canvas' | 'trace' | 'terminal' | 'memory'
+  const [activeTab, setActiveTab] = useState('canvas'); // 'canvas' | 'trace' | 'terminal' | 'memory' | 'charts'
 
   // Error state
   if (error) {
@@ -22,7 +23,7 @@ export default function VisualizationPanel({
       <div className="panel viz-panel">
         <div className="panel-header">
           <div className="panel-title">
-            <span className="panel-title-dot" style={{ background: 'var(--error)' }}></span>
+            <span className="panel-title-dot" style={{ background: 'var(--color-error, #ef4444)' }}></span>
             Execution Diagnostics
           </div>
         </div>
@@ -74,6 +75,7 @@ export default function VisualizationPanel({
               <span className="pill">📦 Struct Fields</span>
               <span className="pill">🔄 Recursion Tree</span>
               <span className="pill">💾 Heap malloc / free</span>
+              <span className="pill">📊 Live Charts</span>
             </div>
           </div>
         </div>
@@ -121,6 +123,14 @@ export default function VisualizationPanel({
             <Layers size={13} />
             <span>Stack Frame</span>
           </button>
+
+          <button
+            className={`viz-tab-btn ${activeTab === 'charts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('charts')}
+          >
+            <BarChart3 size={13} />
+            <span>Charts</span>
+          </button>
         </div>
 
         <div className="viz-header-status">
@@ -165,11 +175,23 @@ export default function VisualizationPanel({
 
         {/* Tab 4: Memory Stack */}
         {activeTab === 'memory' && (
-          <CallStackView
+          <StackDiagramView
             callStack={event.callStack || []}
             currentEvent={event}
+            timeline={timeline}
+            currentStep={currentStep}
             animationDuration={animationDuration}
           />
+        )}
+
+        {/* Tab 5: Charts */}
+        {activeTab === 'charts' && (
+          <div className="charts-tab-fullscreen">
+            <ChartsPanel
+              timeline={timeline}
+              currentStep={currentStep}
+            />
+          </div>
         )}
       </div>
     </div>

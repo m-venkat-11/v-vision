@@ -15,6 +15,8 @@ RUN npm install --only=production
 # Copy source code
 COPY . .
 
-EXPOSE 3001
-ENV PORT=3001
+# Render exposes PORT dynamically (defaults to 10000 on Render, fallback in index.js)
+ENV PORT=10000
+EXPOSE 10000
+
 CMD ["node", "src/index.js"]

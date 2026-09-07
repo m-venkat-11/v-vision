@@ -1,0 +1,178 @@
+/* ==========================================================================
+   VisualCode Design Tokens
+   Single source of truth for all design decisions.
+   Import this file first in index.css / App.jsx
+   ========================================================================== */
+
+:root {
+  /* ---------- Semantic Color Roles ---------- */
+  /* Blue  = focus / current pointer */
+  --color-focus:       #38bdf8;
+  --color-focus-dim:   rgba(56, 189, 248, 0.18);
+  --color-focus-glow:  rgba(56, 189, 248, 0.35);
+
+  /* Amber = comparison / read */
+  --color-compare:     #f59e0b;
+  --color-compare-dim: rgba(245, 158, 11, 0.18);
+
+  /* Green = success / write / true */
+  --color-success:     #10b981;
+  --color-success-dim: rgba(16, 185, 129, 0.18);
+  --color-success-glow:rgba(16, 185, 129, 0.30);
+
+  /* Red = error / false */
+  --color-error:       #ef4444;
+  --color-error-dim:   rgba(239, 68, 68, 0.18);
+
+  /* Purple = function / stack boundary */
+  --color-stack:       #a855f7;
+  --color-stack-dim:   rgba(168, 85, 247, 0.18);
+  --color-stack-glow:  rgba(168, 85, 247, 0.30);
+
+  /* Indigo = primary accent / current */
+  --color-accent:      #818cf8;
+  --color-accent-dim:  rgba(129, 140, 248, 0.15);
+  --color-accent-glow: rgba(129, 140, 248, 0.35);
+
+  /* Orange = heap memory */
+  --color-heap:        #fb923c;
+  --color-heap-dim:    rgba(251, 146, 60, 0.18);
+
+  /* Cyan = pointer arrow / link */
+  --color-pointer:     #22d3ee;
+  --color-pointer-dim: rgba(34, 211, 238, 0.15);
+
+  /* ---------- Background Layers ---------- */
+  --bg-base:          #07080f;   /* deepest background */
+  --bg-surface:       #0d0f1a;   /* main surfaces */
+  --bg-panel:         #10121f;   /* panels */
+  --bg-panel-alt:     #141728;   /* viz canvas (slightly lighter) */
+  --bg-elevated:      #1a1e30;   /* cards, tooltips */
+  --bg-hover:         #1e2235;
+  --bg-input:         #0d0f1a;
+
+  /* ---------- Borders ---------- */
+  --border-subtle:    rgba(255,255,255,0.06);
+  --border-medium:    rgba(255,255,255,0.12);
+  --border-strong:    rgba(255,255,255,0.22);
+
+  /* ---------- Text Scale ---------- */
+  --text-primary:     #f1f5f9;
+  --text-secondary:   #94a3b8;
+  --text-tertiary:    #64748b;
+  --text-muted:       #475569;
+  --text-inverse:     #07080f;
+
+  /* ---------- Typography ---------- */
+  --font-code:  'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  --font-ui:    'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --text-xs:    11px;
+  --text-sm:    12.5px;
+  --text-base:  14px;
+  --text-md:    15px;
+  --text-lg:    17px;
+  --text-xl:    20px;
+  --text-2xl:   24px;
+  --text-3xl:   30px;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semi:   600;
+  --weight-bold:   700;
+
+  /* ---------- Spacing ---------- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+
+  /* ---------- Border Radius ---------- */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-pill: 999px;
+
+  /* ---------- Shadows ---------- */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.6);
+  --shadow-xl:  0 16px 48px rgba(0,0,0,0.7);
+  --shadow-glow-accent: 0 0 20px rgba(129,140,248,0.25);
+  --shadow-glow-success: 0 0 20px rgba(16,185,129,0.25);
+  --shadow-glow-focus: 0 0 16px rgba(56,189,248,0.25);
+
+  /* ---------- Motion (Spring config as data attributes for framer) ---------- */
+  /* Standard spring: medium weight, slightly bouncy */
+  --spring-stiffness: 320;
+  --spring-damping:   28;
+  --spring-mass:      1;
+
+  /* Snappy spring: fast, no bounce */
+  --spring-snappy-stiffness: 500;
+  --spring-snappy-damping:   35;
+
+  /* Gentle spring: slow, organic */
+  --spring-gentle-stiffness: 180;
+  --spring-gentle-damping:   22;
+
+  /* Phase durations at 1x speed (ms) */
+  --phase-highlight:   200ms;
+  --phase-operate:     300ms;
+  --phase-change:      400ms;
+  --phase-settle:      150ms;
+
+  /* Easing */
+  --ease-out:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:   cubic-bezier(0.4, 0, 1, 1);
+  --ease-io:   cubic-bezier(0.45, 0, 0.55, 1);
+
+  /* ---------- Z-index scale ---------- */
+  --z-base:    1;
+  --z-panel:   10;
+  --z-overlay: 100;
+  --z-tooltip: 500;
+  --z-modal:   1000;
+}
+
+/* Shared animation presets as classes */
+.anim-spring-enter {
+  animation: springEnter 0.35s var(--ease-out) forwards;
+}
+
+@keyframes springEnter {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+.anim-fade-in {
+  animation: fadeIn 0.25s var(--ease-out) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.anim-slide-right {
+  animation: slideRight 0.3s var(--ease-out) forwards;
+}
+
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.anim-pulse-border {
+  animation: pulseBorder 1.2s ease-in-out infinite;
+}
+
+@keyframes pulseBorder {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-accent-glow); }
+  50%       { box-shadow: 0 0 0 4px var(--color-accent-dim); }
+}

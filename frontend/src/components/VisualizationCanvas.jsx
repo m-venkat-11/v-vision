@@ -5,12 +5,12 @@ import ArrayView from './ArrayView';
 import VariableView from './VariableView';
 import PointerView from './PointerView';
 import StructView from './StructView';
-import CallStackView from './CallStackView';
-import RecursionTreeView from './RecursionTreeView';
+import StackDiagramView from './StackDiagramView';
 import HeapView from './HeapView';
 import LoopConditionStrip from './LoopConditionStrip';
 import LoopView from './LoopView';
 import ConditionView from './ConditionView';
+import ChartsPanel from './ChartsPanel';
 
 export default function VisualizationCanvas({
   event,
@@ -41,13 +41,9 @@ export default function VisualizationCanvas({
     return heapAllocations && heapAllocations.length > 0;
   }, [heapAllocations]);
 
-  const hasMultiFrames = useMemo(() => {
-    return callStack && callStack.length > 1;
-  }, [callStack]);
-
-  const hasRecursion = useMemo(() => {
-    return timeline.some(e => e.eventType === 'RECURSIVE_CALL');
-  }, [timeline]);
+  const hasStackOrCalls = useMemo(() => {
+    return (callStack && callStack.length > 0) || timeline.some(e => e.eventType === 'FUNCTION_CALLED' || e.eventType === 'RECURSIVE_CALL');
+  }, [callStack, timeline]);
 
   // Pointer variables pointing to arrays
   const pointerVars = useMemo(() => {
@@ -116,18 +112,11 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Call Stack Frames View */}
-      {hasMultiFrames && (
-        <CallStackView
-          callStack={callStack}
+      {/* Unified Stack Diagram View (Stack Frames + Recursion Tree Toggle) */}
+      {hasStackOrCalls && (
+        <StackDiagramView
+          callStack={callStack || []}
           currentEvent={event}
-          animationDuration={animationDuration}
-        />
-      )}
-
-      {/* Recursion Tree View */}
-      {hasRecursion && (
-        <RecursionTreeView
           timeline={timeline}
           currentStep={currentStep}
           animationDuration={animationDuration}
@@ -151,6 +140,14 @@ export default function VisualizationCanvas({
         newVariables={event.newVariables}
         animationDuration={animationDuration}
       />
+
+      {/* Execution Analytics & Charts Panel */}
+      {timeline && timeline.length > 2 && (
+        <ChartsPanel
+          timeline={timeline}
+          currentStep={currentStep}
+        />
+      )}
 
       {/* Program End Banner */}
       {isEndEvent && (
