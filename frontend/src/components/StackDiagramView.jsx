@@ -1,24 +1,29 @@
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Layers, GitFork, ArrowDown, CornerDownRight, Activity, Terminal } from 'lucide-react';
-import { springStandard, scaledSpring } from '../animationConfig.js';
+import { useState, useMemo, useRef } from 'react';
+import { Layers, GitFork, ArrowDown, CornerDownRight } from 'lucide-react';
 
 /**
- * StackDiagramView — Stack Frame Cards & Recursion Tree
- * Dedicated stack view with toggle between vertical Stack Frame cards
- * and interactive Recursion Call Tree.
+ * StackDiagramView — Zero-flicker Stack Frame Cards & Recursion Tree
+ *
+ * Anti-flicker rules applied:
+ *  - No `layout` prop (kills FLIP re-measurement every step)
+ *  - No spring on frame cards (spring with changing y/scale = beat/bounce)
+ *  - No AnimatePresence exit animations on iterative playback
+ *  - CSS transition only on background-color / border-color (no transform)
  */
 export default function StackDiagramView({
   callStack = [],
   currentEvent,
   timeline = [],
   currentStep = 0,
-  animationDuration = 500
+  animationDuration = 400
 }) {
   const [viewMode, setViewMode] = useState('stack'); // 'stack' | 'tree'
-  const spring = scaledSpring(animationDuration);
 
-  // Extract all recursive or function calls up to the current step for the Tree View
+  // Track which frame keys have already been rendered so we only
+  // animate NEWLY appearing frames, not existing ones on every step.
+  const seenFrameKeys = useRef(new Set());
+
+  // Extract all recursive or function calls up to the current step for Tree View
   const callTree = useMemo(() => {
     const calls = [];
     let callCounter = 0;
@@ -48,7 +53,7 @@ export default function StackDiagramView({
       <div className="stack-diagram-header">
         <div className="section-subtitle" style={{ marginBottom: 0 }}>
           <Layers size={14} className="section-icon" style={{ color: 'var(--color-stack, #a855f7)' }} />
-          <span>Call Stack & Frame Hierarchy</span>
+          <span>Call Stack &amp; Frame Hierarchy</span>
           <span className="count-tag">Depth: {callStack.length || 1}</span>
         </div>
 
@@ -73,7 +78,7 @@ export default function StackDiagramView({
         </div>
       </div>
 
-      {/* Mode 1: Stack Frame Cards */}
+      {/* Mode 1: Stack Frame Cards — No layout prop, no spring jitter */}
       {viewMode === 'stack' && (
         <div className="stack-frames-wrapper">
           <div className="stack-direction-indicator">
@@ -82,60 +87,60 @@ export default function StackDiagramView({
           </div>
 
           <div className="call-stack-frames-list">
-            <AnimatePresence initial={false}>
-              {callStack.map((frame, idx) => {
-                const isTop = idx === 0;
-                const isMain = frame.func === 'main';
+            {callStack.map((frame, idx) => {
+              const isTop = idx === 0;
+              const isMain = frame.func === 'main';
+              const frameKey = `frame-${frame.level ?? idx}-${frame.func}`;
 
-                // Evaluate local variables from currentEvent if active frame
-                const frameVars = isTop && currentEvent?.variables
-                  ? Object.entries(currentEvent.variables).filter(([k]) => !['argc', 'argv'].includes(k))
-                  : [];
+              // Only do fade-in on frames that haven't appeared yet
+              const isNew = !seenFrameKeys.current.has(frameKey);
+              if (isNew) seenFrameKeys.current.add(frameKey);
 
-                return (
-                  <motion.div
-                    key={`frame-${frame.level || idx}-${frame.func}`}
-                    className={`call-frame-card ${isTop ? 'is-top-active' : ''}`}
-                    initial={{ opacity: 0, y: -24, scale: 0.94 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, x: 50, scale: 0.9 }}
-                    transition={spring}
-                    layout
-                  >
-                    <div className="frame-top-bar">
-                      <div className="frame-func-info">
-                        <span className="frame-badge">Frame #{frame.level ?? (callStack.length - idx)}</span>
-                        <span className="frame-func-name">{frame.func}()</span>
-                        {isTop && <span className="frame-active-pill">ACTIVE FRAME</span>}
-                        {isMain && !isTop && <span className="frame-main-pill">ENTRY</span>}
-                      </div>
-                      <div className="frame-location">
-                        <code>L{frame.line || currentEvent?.line}</code>
-                        {frame.addr && <span className="frame-addr">{frame.addr}</span>}
-                      </div>
+              // Only show locals for the topmost active frame
+              const frameVars = isTop && currentEvent?.variables
+                ? Object.entries(currentEvent.variables)
+                    .filter(([k]) => !['argc', 'argv'].includes(k))
+                    .slice(0, 6)
+                : [];
+
+              return (
+                <div
+                  key={frameKey}
+                  className={`call-frame-card ${isTop ? 'is-top-active' : ''} ${isNew ? 'frame-entering' : ''}`}
+                >
+                  <div className="frame-top-bar">
+                    <div className="frame-func-info">
+                      <span className="frame-badge">Frame #{frame.level ?? (callStack.length - idx)}</span>
+                      <span className="frame-func-name">{frame.func}()</span>
+                      {isTop && <span className="frame-active-pill">ACTIVE FRAME</span>}
+                      {isMain && !isTop && <span className="frame-main-pill">ENTRY</span>}
                     </div>
+                    <div className="frame-location">
+                      <code>L{frame.line || currentEvent?.line}</code>
+                      {frame.addr && <span className="frame-addr">{frame.addr}</span>}
+                    </div>
+                  </div>
 
-                    {/* Frame local variables */}
-                    {frameVars.length > 0 && (
-                      <div className="frame-locals-preview">
-                        <span className="locals-title">Local Scope:</span>
-                        {frameVars.map(([k, v]) => (
-                          <span key={k} className="frame-var-pill">
-                            <span className="fv-name">{k}:</span>
-                            <span className="fv-val">{typeof v === 'number' ? v : JSON.stringify(v)}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                  {/* Frame local variables — stable, no Framer Motion */}
+                  {frameVars.length > 0 && (
+                    <div className="frame-locals-preview">
+                      <span className="locals-title">Local Scope:</span>
+                      {frameVars.map(([k, v]) => (
+                        <span key={k} className="frame-var-pill">
+                          <span className="fv-name">{k}:</span>
+                          <span className="fv-val">{typeof v === 'number' ? v : JSON.stringify(v)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Mode 2: Call / Recursion Tree */}
+      {/* Mode 2: Call / Recursion Tree — stable incremental list */}
       {viewMode === 'tree' && (
         <div className="recursion-tree-view-wrapper">
           {callTree.length === 0 ? (
@@ -147,13 +152,10 @@ export default function StackDiagramView({
                 const indent = Math.max(0, (c.depth - 1) * 20);
 
                 return (
-                  <motion.div
+                  <div
                     key={c.id}
                     className={`recursion-tree-node ${isLatest ? 'is-active-node' : ''}`}
                     style={{ marginLeft: `${indent}px` }}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={spring}
                   >
                     <div className="node-branch-indicator">
                       <CornerDownRight size={13} className="branch-icon" />
@@ -170,7 +172,7 @@ export default function StackDiagramView({
                       </span>
                       {isLatest && <span className="node-current-tag">Active</span>}
                     </div>
-                  </motion.div>
+                  </div>
                 );
               })}
             </div>
