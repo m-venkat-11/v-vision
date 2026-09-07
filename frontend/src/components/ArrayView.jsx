@@ -141,29 +141,22 @@ function Array1D({
               <div className="array-cell-slot" key={idx}>
                 {/* Pointer flag indicators with fixed track height */}
                 <div className="array-pointer-track">
-                  <AnimatePresence>
-                    {pointersHere.map(pName => {
-                      const colorScheme = getPointerColor(pName);
-                      return (
-                        <motion.div
-                          key={pName}
-                          className="cell-pointer-flag"
-                          style={{
-                            background: colorScheme.bg,
-                            borderColor: colorScheme.border,
-                            color: colorScheme.text
-                          }}
-                          initial={{ opacity: 0, y: -4, scale: 0.85 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -4, scale: 0.85 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          <span>{pName}</span>
-                          <ArrowDown size={10} strokeWidth={2.5} />
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
+                  {pointersHere.length > 0 && (() => {
+                    const primaryColor = getPointerColor(pointersHere[0]);
+                    return (
+                      <div
+                        className="cell-pointer-flag"
+                        style={{
+                          background: primaryColor.bg,
+                          borderColor: primaryColor.border,
+                          color: primaryColor.text
+                        }}
+                      >
+                        <span>{pointersHere.join(', ')}</span>
+                        <ArrowDown size={10} strokeWidth={2.5} />
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Cell box with smooth, non-flickering state scaling */}

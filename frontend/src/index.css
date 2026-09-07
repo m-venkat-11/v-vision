@@ -974,6 +974,11 @@ body {
   font-size: 17px;
   font-weight: 700;
   color: #fff;
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .cell-diff-pill {
@@ -1779,14 +1784,18 @@ body {
   z-index: 20;
 }
 
-/* Why Engine Banner */
+/* Why Engine Banner — Strictly fixed height so app-main never resizes */
 .why-engine-banner {
   display: flex;
   flex-direction: column;
-  padding: 9px 24px;
+  padding: 8px 24px;
   border-bottom: 1px solid var(--border-subtle);
-  gap: 6px;
+  gap: 4px;
   background: rgba(0, 0, 0, 0.2);
+  min-height: 60px;
+  max-height: 60px;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .why-banner-top {
@@ -1844,7 +1853,10 @@ body {
   gap: 8px;
   color: var(--text-primary);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .why-bulb-icon {
@@ -1854,6 +1866,9 @@ body {
 
 .why-text-body {
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Playback Controls Component */
@@ -2760,8 +2775,12 @@ body {
    ========================================================================== */
 .loop-condition-strip {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  min-height: 34px;
+  max-height: 34px;
+  height: 34px;
+  overflow: hidden;
 }
 
 .strip-item {
@@ -2791,6 +2810,18 @@ body {
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.3);
   color: #f87171;
+}
+
+.strip-item-idle {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+}
+
+.strip-label-idle {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .strip-code {

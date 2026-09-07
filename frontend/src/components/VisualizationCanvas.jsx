@@ -8,7 +8,6 @@ import StructView from './StructView';
 import StackDiagramView from './StackDiagramView';
 import HeapView from './HeapView';
 import LoopConditionStrip from './LoopConditionStrip';
-import ChartsPanel from './ChartsPanel';
 
 export default function VisualizationCanvas({
   event,
@@ -40,7 +39,7 @@ export default function VisualizationCanvas({
   }, [heapAllocations]);
 
   const hasStackOrCalls = useMemo(() => {
-    return (callStack && callStack.length > 0) || timeline.some(e => e.eventType === 'FUNCTION_CALLED' || e.eventType === 'RECURSIVE_CALL');
+    return (callStack && callStack.length > 1) || timeline.some(e => e.eventType === 'FUNCTION_CALLED' || e.eventType === 'RECURSIVE_CALL');
   }, [callStack, timeline]);
 
   // Pointer variables pointing to arrays
@@ -127,13 +126,6 @@ export default function VisualizationCanvas({
         animationDuration={animationDuration}
       />
 
-      {/* Execution Analytics & Charts Panel */}
-      {timeline && timeline.length > 2 && (
-        <ChartsPanel
-          timeline={timeline}
-          currentStep={currentStep}
-        />
-      )}
 
       {/* Program End Banner */}
       {isEndEvent && (

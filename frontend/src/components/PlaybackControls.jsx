@@ -57,16 +57,6 @@ export default function PlaybackControls({
           className="scrubber-fill"
           style={{ width: `${progress}%` }}
         />
-        {/* Step Countdown Bar for Auto-play */}
-        {isPlaying && (
-          <div 
-            className="step-countdown-bar"
-            style={{ 
-              left: `${progress}%`,
-              width: `${(1 / (totalSteps || 1)) * 100 * stepProgress}%` 
-            }}
-          />
-        )}
       </div>
 
       <div className="playback-controls-bar">

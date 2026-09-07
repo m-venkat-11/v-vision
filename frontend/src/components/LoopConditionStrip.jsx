@@ -1,4 +1,4 @@
-import { RotateCw, CheckCircle2, XCircle, HelpCircle } from 'lucide-react';
+import { RotateCw, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 
 export default function LoopConditionStrip({ event }) {
   if (!event) return null;
@@ -8,16 +8,19 @@ export default function LoopConditionStrip({ event }) {
   const hasCond = event.conditionResult !== undefined && event.conditionResult !== null;
   const isTrue = event.conditionResult === true;
 
-  if (!hasLoop && !hasCond) return null;
-
   return (
     <div className="loop-condition-strip">
-      {hasLoop && (
+      {hasLoop ? (
         <div className="strip-item loop-strip-item">
           <RotateCw size={13} className="strip-icon spin-slow" />
           <span className="strip-label">{loop.type?.toUpperCase()} LOOP:</span>
           <span className="strip-val">Iteration #{loop.iteration + 1}</span>
           {loop.condition && <code className="strip-code">{loop.condition}</code>}
+        </div>
+      ) : (
+        <div className="strip-item strip-item-idle">
+          <ArrowRight size={12} className="strip-icon" />
+          <span className="strip-label-idle">Sequential Execution</span>
         </div>
       )}
 

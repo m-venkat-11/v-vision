@@ -99,19 +99,10 @@ export default function WhyCaption({ event, step, animationDuration }) {
         )}
       </div>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step}
-          className="why-narrative-text"
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -5 }}
-          transition={{ duration: animationDuration / 1100 }}
-        >
-          <Lightbulb size={16} className="why-bulb-icon" />
-          <span className="why-text-body">{event.why}</span>
-        </motion.div>
-      </AnimatePresence>
+      <div className="why-narrative-text">
+        <Lightbulb size={16} className="why-bulb-icon" />
+        <span className="why-text-body">{event.why}</span>
+      </div>
     </div>
   );
 }

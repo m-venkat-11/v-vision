@@ -3,8 +3,7 @@
  * and prints the resulting timeline to console.
  */
 
-import { runWithGDB } from './services/gdbRunner.js';
-import { buildTimeline } from './services/timelineBuilder.js';
+import { runAndTrace } from './services/gdbRunner.js';
 
 const FIND_MAX_CODE = `#include <stdio.h>
 int main() {
@@ -27,28 +26,16 @@ async function test() {
 
   try {
     // Step 1: Run GDB
-    console.log('[1] Running GDB...');
-    const result = await runWithGDB(FIND_MAX_CODE);
+    console.log('[1] Running GDB & Pipeline...');
+    const result = await runAndTrace(FIND_MAX_CODE);
 
     if (!result.success) {
-      console.error('❌ GDB failed:', result.error);
+      console.error('❌ Pipeline failed:', result.error);
       process.exit(1);
     }
 
-    console.log(`✅ GDB completed: ${result.steps.length} raw steps captured\n`);
-
-    // Print raw steps
-    console.log('--- Raw GDB Steps ---');
-    for (const step of result.steps) {
-      console.log(`  Step ${step.step}: Line ${step.line} | ${step.sourceLine} | vars: ${JSON.stringify(step.variables)} | arrays: ${JSON.stringify(step.arrays)}`);
-    }
-    console.log('');
-
-    // Step 2: Build timeline
-    console.log('[2] Building timeline...');
-    const timeline = buildTimeline(result.steps, result.sourceLines);
-
-    console.log(`✅ Timeline built: ${timeline.length} events\n`);
+    const timeline = result.timeline || [];
+    console.log(`✅ Pipeline completed: ${timeline.length} events generated\n`);
 
     // Print timeline
     console.log('--- Clean Timeline ---');

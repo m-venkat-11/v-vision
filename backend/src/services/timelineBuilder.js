@@ -31,6 +31,29 @@ export const EventType = {
   STATEMENT: 'STATEMENT'
 };
 
+function findDeclarations(sourceLines) {
+  const decls = {};
+  if (!Array.isArray(sourceLines)) return decls;
+  const typeRegex = /^\s*(?:const\s+)?(?:int|char|float|double|long|short|unsigned|signed|size_t|struct\s+\w+)\b/;
+  for (let l = 0; l < sourceLines.length; l++) {
+    const line = sourceLines[l];
+    if (line.trim().startsWith('#') || !typeRegex.test(line)) continue;
+    if (/struct\s+\w+\s*\{/.test(line)) continue;
+    if (/\w+\s*\([^)]*\)\s*\{?$/.test(line.trim()) && !line.includes('=')) continue;
+
+    const beforeAssign = line.split('=')[0];
+    const afterType = beforeAssign.replace(typeRegex, '');
+    const parts = afterType.split(',');
+    for (const part of parts) {
+      const m = part.match(/\*?\s*([a-zA-Z_]\w*)\s*(?:\[.*\])?/);
+      if (m && m[1] && !['main', 'return', 'if', 'for', 'while', 'const'].includes(m[1])) {
+        if (!decls[m[1]]) decls[m[1]] = l + 1;
+      }
+    }
+  }
+  return decls;
+}
+
 /**
  * Build structured timeline events from raw GDB steps
  */
@@ -42,6 +65,7 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
   let loopStack = [];
   let seenLoopLines = new Set();
   let stepCounter = 0;
+  const decls = findDeclarations(sourceLines);
 
   for (let i = 0; i < rawSteps.length; i++) {
     const raw = rawSteps[i];
@@ -75,6 +99,40 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
       continue;
     }
 
+    // Filter out uninitialized locals before their declaration line
+    const isLoopHeader = /^(for|while)\s*\(/.test(sourceLine);
+    const activeVariables = {};
+    for (const [k, v] of Object.entries(variables || {})) {
+      const declLine = decls[k];
+      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+        activeVariables[k] = v;
+      }
+    }
+
+    const activeArrays = {};
+    for (const [k, v] of Object.entries(arrays || {})) {
+      const declLine = decls[k];
+      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+        activeArrays[k] = v;
+      }
+    }
+
+    const activeStructs = {};
+    for (const [k, v] of Object.entries(structs || {})) {
+      const declLine = decls[k];
+      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+        activeStructs[k] = v;
+      }
+    }
+
+    const activePointers = {};
+    for (const [k, v] of Object.entries(pointers || {})) {
+      const declLine = decls[k];
+      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+        activePointers[k] = v;
+      }
+    }
+
     const prevVars = prevStep?.variables || {};
     const prevArr = prevStep?.arrays || {};
     const prevStructs = prevStep?.structs || {};
@@ -83,19 +141,19 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     const prevFunc = prevStep?.function || 'main';
 
     // Diffs
-    const changedVars = diffVariables(prevVars, variables);
-    const newVars = findNewKeys(prevVars, variables);
+    const changedVars = diffVariables(prevVars, activeVariables);
+    const newVars = findNewKeys(prevVars, activeVariables);
 
-    const changedArrays = diffArrays(prevArr, arrays);
-    const newArrays = findNewKeys(prevArr, arrays);
+    const changedArrays = diffArrays(prevArr, activeArrays);
+    const newArrays = findNewKeys(prevArr, activeArrays);
 
-    const changedStructs = diffStructs(prevStructs, structs);
-    const newStructs = findNewKeys(prevStructs, structs);
+    const changedStructs = diffStructs(prevStructs, activeStructs);
+    const newStructs = findNewKeys(prevStructs, activeStructs);
 
-    const changedPointers = diffPointers(prevPointers, pointers);
-    const newPointers = findNewKeys(prevPointers, pointers);
+    const changedPointers = diffPointers(prevPointers, activePointers);
+    const newPointers = findNewKeys(prevPointers, activePointers);
 
-    // Classify Event
+    // Classive Event
     let eventType = EventType.STATEMENT;
 
     // 1. Function Call / Return / Recursion
@@ -158,14 +216,14 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     let conditionResult = null;
     if (eventType === EventType.CONDITION_CHECKED) {
       const nextStep = (i + 1 < rawSteps.length) ? rawSteps[i + 1] : null;
-      conditionResult = evaluateConditionBranch(sourceLine, variables, arrays, nextStep, line);
+      conditionResult = evaluateConditionBranch(sourceLine, activeVariables, activeArrays, nextStep, line);
     }
 
     // Update loop tracking
     updateLoopStack(eventType, sourceLine, loopStack);
 
     // Array highlight calculation
-    const highlight = buildArrayHighlight(sourceLine, variables, arrays);
+    const highlight = buildArrayHighlight(sourceLine, activeVariables, activeArrays);
 
     const event = {
       step: stepCounter++,
@@ -175,10 +233,10 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
       callStack: callStack.map(f => ({ ...f })),
       sourceLine,
       eventType,
-      variables: { ...variables },
-      arrays: { ...arrays },
-      structs: { ...structs },
-      pointers: { ...pointers },
+      variables: { ...activeVariables },
+      arrays: { ...activeArrays },
+      structs: { ...activeStructs },
+      pointers: { ...activePointers },
       heapAllocations: raw.heapAllocations || [],
       highlight,
       ...(conditionResult !== null && { conditionResult }),
@@ -199,7 +257,13 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     event.why = generateExplanation(event, prevVars, prevArr, prevStructs, prevPointers);
 
     timeline.push(event);
-    prevStep = raw;
+    prevStep = {
+      ...raw,
+      variables: activeVariables,
+      arrays: activeArrays,
+      structs: activeStructs,
+      pointers: activePointers
+    };
   }
 
   // Add final PROGRAM_END event if not present
