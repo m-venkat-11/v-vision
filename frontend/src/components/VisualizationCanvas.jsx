@@ -8,6 +8,7 @@ import StructView from './StructView';
 import StackDiagramView from './StackDiagramView';
 import HeapView from './HeapView';
 import LoopConditionStrip from './LoopConditionStrip';
+import IterationSpaceView from './IterationSpaceView';
 
 export default function VisualizationCanvas({
   event,
@@ -42,6 +43,16 @@ export default function VisualizationCanvas({
     return (callStack && callStack.length > 1) || timeline.some(e => e.eventType === 'FUNCTION_CALLED' || e.eventType === 'RECURSIVE_CALL');
   }, [callStack, timeline]);
 
+  // Check if loops exist anywhere in execution
+  const hasLoops = useMemo(() => {
+    return timeline.some(e => 
+      e.eventType === 'LOOP_STARTED' || 
+      e.eventType === 'LOOP_ITERATION' || 
+      /^(for|while)\s*\(/.test(e.sourceLine?.trim() || '') ||
+      (e.loopState && e.loopState.depth > 0)
+    );
+  }, [timeline]);
+
   // Pointer variables pointing to arrays
   const pointerVars = useMemo(() => {
     const pVars = {};
@@ -61,9 +72,11 @@ export default function VisualizationCanvas({
     return pVars;
   }, [variables, arrays, event]);
 
+  const hasAnySpatialDiagram = hasArrays || (hasLoops && !hasArrays) || hasPointers || hasStructs || hasHeap || hasStackOrCalls;
+
   return (
     <div className="canvas-view-wrap">
-      {/* 1D & 2D Arrays View — Pinned at the top for rock-solid vertical stability */}
+      {/* 1. Array Iteration View (When program uses arrays) */}
       {hasArrays && (
         <ArrayView
           arrays={arrays}
@@ -75,10 +88,20 @@ export default function VisualizationCanvas({
         />
       )}
 
+      {/* 2. 2D/1D Iteration Space View (When program has loops but NO array) */}
+      {!hasArrays && hasLoops && (
+        <IterationSpaceView
+          event={event}
+          timeline={timeline}
+          currentStep={currentStep}
+          animationDuration={animationDuration}
+        />
+      )}
+
       {/* Persistent Loop & Condition Status Strip — Smooth single-line indicator */}
       <LoopConditionStrip event={event} />
 
-      {/* Pointers & Memory Links */}
+      {/* 3. Pointers & Memory Links */}
       {hasPointers && (
         <PointerView
           pointers={pointers}
@@ -88,7 +111,7 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Struct Instances View */}
+      {/* 4. Struct Instances View */}
       {hasStructs && (
         <StructView
           structs={structs}
@@ -97,7 +120,7 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Unified Stack Diagram View (Stack Frames + Recursion Tree Toggle) */}
+      {/* 5. Unified Stack Diagram View (Stack Frames + Recursion Tree) */}
       {hasStackOrCalls && (
         <StackDiagramView
           callStack={callStack || []}
@@ -108,7 +131,7 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Dynamic Heap Memory (malloc / free) */}
+      {/* 6. Dynamic Heap Memory (malloc / free) */}
       {hasHeap && (
         <HeapView
           heapAllocations={heapAllocations}
@@ -118,14 +141,15 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Variables & Registers */}
-      <VariableView
-        variables={variables}
-        changes={changes}
-        newVariables={event.newVariables}
-        animationDuration={animationDuration}
-      />
-
+      {/* 7. Variables fallback only when no spatial diagram exists, or as collapsed supporting reference */}
+      {!hasAnySpatialDiagram && (
+        <VariableView
+          variables={variables}
+          changes={changes}
+          newVariables={event.newVariables}
+          animationDuration={animationDuration}
+        />
+      )}
 
       {/* Program End Banner */}
       {isEndEvent && (

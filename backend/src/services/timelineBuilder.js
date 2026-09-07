@@ -54,6 +54,37 @@ function findDeclarations(sourceLines) {
   return decls;
 }
 
+function isTruePointerDereference(sourceLine, activePointers, allKnownPointers) {
+  if (!sourceLine || !sourceLine.includes('*')) return false;
+  const trimmed = sourceLine.trim();
+
+  // 1. Loops, conditions, and control statements are NEVER pointer dereferences
+  if (/^(for|while|if|else\s+if|do|switch|case)\b/.test(trimmed)) return false;
+
+  // 2. Variable or pointer declaration lines (e.g., int *p = ..., char *s;) are declarations/creations, not dereferences
+  if (/^\s*(?:const\s+)?(?:unsigned\s+)?(?:signed\s+)?(?:int|char|float|double|void|long|short|struct\s+\w+)\s*\*+/.test(trimmed)) {
+    return false;
+  }
+
+  // 3. Ignore pointer cast expressions like (int *), (void *)
+  const cleanLine = trimmed.replace(/\(\s*(?:const\s+)?(?:unsigned\s+)?(?:signed\s+)?(?:int|char|float|double|void|long|short|struct\s+\w+)\s*\*+\s*\)/g, '');
+
+  // 4. Look for unary * applied to a pointer variable:
+  // In binary multiplication (e.g. i * n, (a + b) * c, arr[0] * 2), '*' is preceded by an operand: [a-zA-Z0-9_\)\]]
+  // In unary dereference (e.g. *a = *b, val = *ptr), '*' is preceded by line start, an operator, open paren/bracket, comma, etc.
+  const unaryMatches = cleanLine.matchAll(/(?:^|[^a-zA-Z0-9_\)\]])\s*\*+\s*([a-zA-Z_]\w*)/g);
+  for (const match of unaryMatches) {
+    const candidateVar = match[1];
+    // Check against GDB-reported pointers!
+    if ((activePointers && candidateVar in activePointers) || 
+        (allKnownPointers && allKnownPointers.has(candidateVar))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Build structured timeline events from raw GDB steps
  */
@@ -66,6 +97,15 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
   let seenLoopLines = new Set();
   let stepCounter = 0;
   const decls = findDeclarations(sourceLines);
+
+  const allKnownPointers = new Set();
+  for (const step of rawSteps) {
+    if (step.pointers) {
+      for (const pName of Object.keys(step.pointers)) {
+        allKnownPointers.add(pName);
+      }
+    }
+  }
 
   for (let i = 0; i < rawSteps.length; i++) {
     const raw = rawSteps[i];
@@ -172,22 +212,8 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     } else if (/free\s*\(/.test(sourceLine)) {
       eventType = EventType.HEAP_FREED;
     }
-    // 3. Pointer dereference & pointer changes
-    else if (/\*\s*\w+/.test(sourceLine) && (changedVars.length > 0 || sourceLine.includes('*'))) {
-      eventType = EventType.POINTER_DEREFERENCE;
-    } else if (changedPointers.length > 0) {
-      eventType = EventType.POINTER_REASSIGNED;
-    } else if (newPointers.length > 0) {
-      eventType = EventType.POINTER_CREATED;
-    }
-    // 4. Struct changes
-    else if (changedStructs.length > 0) {
-      eventType = EventType.STRUCT_FIELD_CHANGED;
-    } else if (newStructs.length > 0) {
-      eventType = EventType.STRUCT_CREATED;
-    }
-    // 5. Loops
-    else if (/^(for|while)\s*\(/.test(sourceLine.trim())) {
+    // 3. Loops (Prioritized before pointer checks so for/while lines with expressions like j <= i * n are never misclassified as pointer dereferences)
+    else if (/^(for|while)\s*\(/.test(sourceLine.trim()) || /^do\s*\{/.test(sourceLine.trim())) {
       if (seenLoopLines.has(line)) {
         eventType = EventType.LOOP_ITERATION;
       } else {
@@ -195,9 +221,23 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
         eventType = EventType.LOOP_STARTED;
       }
     }
-    // 6. Conditions
+    // 4. Conditions
     else if (/^(if|else\s+if)\s*\(/.test(sourceLine.trim())) {
       eventType = EventType.CONDITION_CHECKED;
+    }
+    // 5. Pointer dereference & pointer changes (Verified against GDB pointer type information)
+    else if (isTruePointerDereference(sourceLine, activePointers, allKnownPointers)) {
+      eventType = EventType.POINTER_DEREFERENCE;
+    } else if (changedPointers.length > 0) {
+      eventType = EventType.POINTER_REASSIGNED;
+    } else if (newPointers.length > 0) {
+      eventType = EventType.POINTER_CREATED;
+    }
+    // 6. Struct changes
+    else if (changedStructs.length > 0) {
+      eventType = EventType.STRUCT_FIELD_CHANGED;
+    } else if (newStructs.length > 0) {
+      eventType = EventType.STRUCT_CREATED;
     }
     // 7. Arrays
     else if (changedArrays.length > 0) {
@@ -220,7 +260,7 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     }
 
     // Update loop tracking
-    updateLoopStack(eventType, sourceLine, loopStack);
+    updateLoopStack(eventType, sourceLine, loopStack, line);
 
     // Array highlight calculation
     const highlight = buildArrayHighlight(sourceLine, activeVariables, activeArrays);
@@ -248,7 +288,8 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
       ...(loopStack.length > 0 && {
         loopState: {
           depth: loopStack.length,
-          currentLoop: { ...loopStack[loopStack.length - 1] }
+          currentLoop: { ...loopStack[loopStack.length - 1] },
+          stack: loopStack.map(l => ({ ...l }))
         }
       })
     };
@@ -408,20 +449,36 @@ function evaluateConditionBranch(sourceLine, variables, arrays, nextStep, curren
   return null;
 }
 
-function updateLoopStack(eventType, sourceLine, loopStack) {
+function updateLoopStack(eventType, sourceLine, loopStack, line) {
   if (eventType === EventType.LOOP_STARTED) {
     let loopVar = null;
     const forMatch = sourceLine.match(/for\s*\(\s*(?:int\s+)?(\w+)/);
     if (forMatch) loopVar = forMatch[1];
+    else {
+      const whileMatch = sourceLine.match(/while\s*\(\s*(\w+)/);
+      if (whileMatch) loopVar = whileMatch[1];
+    }
+
+    // If an existing inner loop was recorded at or after this line, pop it
+    while (loopStack.length > 0 && loopStack[loopStack.length - 1].line >= line) {
+      loopStack.pop();
+    }
 
     loopStack.push({
+      line,
       type: sourceLine.trim().startsWith('while') ? 'while' : 'for',
       variable: loopVar,
       iteration: 0,
       condition: sourceLine.match(/\((.+)\)/)?.[1] || ''
     });
   } else if (eventType === EventType.LOOP_ITERATION && loopStack.length > 0) {
-    loopStack[loopStack.length - 1].iteration++;
+    // If we stepped back to an outer loop line, pop any inner loops
+    while (loopStack.length > 0 && loopStack[loopStack.length - 1].line > line) {
+      loopStack.pop();
+    }
+    if (loopStack.length > 0) {
+      loopStack[loopStack.length - 1].iteration++;
+    }
   } else if (eventType === EventType.LOOP_ENDED && loopStack.length > 0) {
     loopStack.pop();
   }

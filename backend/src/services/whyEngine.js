@@ -3,12 +3,14 @@
  * 
  * Generates natural plain-English explanations for all C constructs:
  * scalars, arrays, pointers, structs, functions, recursion, and heap memory.
+ * Includes strict validation passes to ensure captions never misclassify
+ * arithmetic operations or loop condition re-evaluations as pointer dereferences.
  */
 
 export function generateExplanation(event, prevVariables = {}, prevArrays = {}, prevStructs = {}, prevPointers = {}) {
   const { 
     eventType, 
-    sourceLine, 
+    sourceLine = '', 
     variables = {}, 
     arrays = {}, 
     structs = {}, 
@@ -23,6 +25,10 @@ export function generateExplanation(event, prevVariables = {}, prevArrays = {}, 
     loopState 
   } = event;
 
+  const trimmed = sourceLine.trim();
+
+  let caption = '';
+
   switch (eventType) {
     case 'POINTER_CREATED':
     case 'POINTER_REASSIGNED': {
@@ -30,25 +36,42 @@ export function generateExplanation(event, prevVariables = {}, prevArrays = {}, 
         const pc = pointerChanges[0];
         const ptrObj = pointers[pc.name];
         const targetDesc = ptrObj?.pointsToVar ? `variable ${ptrObj.pointsToVar}` : `address ${pc.to}`;
-        return `Pointer ${pc.name} now points to ${targetDesc} (${pc.to}).`;
+        caption = `Pointer ${pc.name} now points to ${targetDesc} (${pc.to}).`;
+        break;
       }
-      return `Executing pointer assignment: ${sourceLine}`;
+      caption = `Executing pointer assignment: ${sourceLine}`;
+      break;
     }
 
     case 'POINTER_DEREFERENCE': {
-      const derefMatch = sourceLine.match(/\*(\w+)/);
-      if (derefMatch) {
-        const ptrName = derefMatch[1];
-        const ptrObj = pointers ? pointers[ptrName] : null;
+      // Find unary * followed by identifier
+      const cleanLine = trimmed.replace(/\(\s*(?:const\s+)?(?:unsigned\s+)?(?:int|char|float|double|void|struct\s+\w+)\s*\*+\s*\)/g, '');
+      const derefMatches = [...cleanLine.matchAll(/(?:^|[^a-zA-Z0-9_\)\]])\s*\*+\s*([a-zA-Z_]\w*)/g)];
+      const validMatch = derefMatches.find(m => pointers && m[1] in pointers);
+
+      if (validMatch) {
+        const ptrName = validMatch[1];
+        const ptrObj = pointers[ptrName];
         const val = (ptrObj && ptrObj.dereferencedValue !== null && ptrObj.dereferencedValue !== undefined)
           ? ptrObj.dereferencedValue
           : 'value';
         if (sourceLine.includes('=')) {
-          return `*${ptrName} writes or modifies the value at the address ${ptrName} points to (${val}).`;
+          caption = `*${ptrName} writes or modifies the value at the address ${ptrName} points to (${val}).`;
+        } else {
+          caption = `*${ptrName} reads the value stored at the address ${ptrName} points to (${val}).`;
         }
-        return `*${ptrName} reads the value stored at the address ${ptrName} points to (${val}).`;
+        break;
       }
-      return `Dereferencing pointer: ${sourceLine}`;
+
+      // VALIDATION PASS: If marked POINTER_DEREFERENCE without genuine pointer, fall back!
+      if (/^(for|while)\s*\(/.test(trimmed)) {
+        const condMatch = sourceLine.match(/for\s*\([^;]+;\s*([^;]+);/);
+        const cond = condMatch ? condMatch[1].trim() : trimmed;
+        caption = `Re-evaluating loop condition: ${cond}.`;
+        break;
+      }
+      caption = `Executing statement: ${sourceLine}`;
+      break;
     }
 
     case 'STRUCT_CREATED': {
@@ -56,35 +79,42 @@ export function generateExplanation(event, prevVariables = {}, prevArrays = {}, 
       if (sNames.length > 0) {
         const name = sNames[0];
         const fields = JSON.stringify(structs[name]).replace(/"/g, '').replace(/,/g, ', ');
-        return `Instantiating struct ${name} with initial fields ${fields}.`;
+        caption = `Instantiating struct ${name} with initial fields ${fields}.`;
+        break;
       }
-      return `Creating struct: ${sourceLine}`;
+      caption = `Creating struct: ${sourceLine}`;
+      break;
     }
 
     case 'STRUCT_FIELD_CHANGED': {
       if (structChanges && structChanges.length > 0) {
         const sc = structChanges[0];
-        return `${sc.struct}.${sc.field} is updated from ${sc.from} to ${sc.to}.`;
+        caption = `${sc.struct}.${sc.field} is updated from ${sc.from} to ${sc.to}.`;
+        break;
       }
-      return `Updating struct field: ${sourceLine}`;
+      caption = `Updating struct field: ${sourceLine}`;
+      break;
     }
 
     case 'FUNCTION_CALLED': {
       const callMatch = sourceLine.match(/(\w+)\s*\(([^)]*)\)/);
       const calledFunc = callMatch ? callMatch[1] : funcName;
       const args = callMatch ? callMatch[2] : '';
-      return `Calling function ${calledFunc}(${args}) — control jumps into the function body and a new frame is pushed onto the stack.`;
+      caption = `Calling function ${calledFunc}(${args}) — control jumps into the function body and a new frame is pushed onto the stack.`;
+      break;
     }
 
     case 'RECURSIVE_CALL': {
       const callMatch = sourceLine.match(/(\w+)\s*\(([^)]*)\)/);
       const calledFunc = callMatch ? callMatch[1] : funcName;
       const args = callMatch ? callMatch[2] : '';
-      return `Recursive call: ${calledFunc}(${args}) is pushed onto the call stack at depth ${callDepth} waiting for sub-problem result.`;
+      caption = `Recursive call: ${calledFunc}(${args}) is pushed onto the call stack at depth ${callDepth} waiting for sub-problem result.`;
+      break;
     }
 
     case 'FUNCTION_RETURNED': {
-      return `Function ${funcName} returned. Control returns to the caller and its stack frame is popped.`;
+      caption = `Function ${funcName} returned. Control returns to the caller and its stack frame is popped.`;
+      break;
     }
 
     case 'HEAP_ALLOCATED': {
@@ -94,89 +124,152 @@ export function generateExplanation(event, prevVariables = {}, prevArrays = {}, 
         const size = allocMatch[2];
         const ptrObj = pointers[ptrName];
         const addr = ptrObj?.targetAddress || 'heap';
-        return `malloc reserves ${size} bytes on the heap at ${addr}, and ${ptrName} now points to it.`;
+        caption = `malloc reserves ${size} bytes on the heap at ${addr}, and ${ptrName} now points to it.`;
+        break;
       }
-      return `Dynamic memory allocated on heap: ${sourceLine}`;
+      caption = `Dynamic memory allocated on heap: ${sourceLine}`;
+      break;
     }
 
     case 'HEAP_FREED': {
       const freeMatch = sourceLine.match(/free\s*\(\s*(\w+)\s*\)/);
       if (freeMatch) {
         const ptrName = freeMatch[1];
-        return `free(${ptrName}) releases the allocated memory block on the heap back to the operating system.`;
+        caption = `free(${ptrName}) releases the allocated memory block on the heap back to the operating system.`;
+        break;
       }
-      return `Releasing heap memory block: ${sourceLine}`;
+      caption = `Releasing heap memory block: ${sourceLine}`;
+      break;
     }
 
     case 'LOOP_STARTED': {
-      const forMatch = sourceLine.match(/for\s*\(\s*(?:int\s+)?(\w+)\s*=\s*(\S+?)\s*;\s*(\w+)\s*([<>=!]+)\s*(\S+?)\s*;/);
-      if (forMatch) {
-        const [, varName, initVal, condVar, op, limit] = forMatch;
-        return `Starting for loop: ${varName} initialized to ${initVal}, runs while ${condVar} ${op} ${limit}.`;
+      const forMatch = sourceLine.match(/for\s*\(\s*(?:(?:int\s+)?(\w+)\s*=\s*([^;]+?))?\s*;\s*([^;]+?)\s*;\s*([^)]+?)\)/);
+      if (forMatch && forMatch[1]) {
+        const [, varName, initVal, cond] = forMatch;
+        caption = `Starting for loop: ${varName} initialized to ${initVal ? initVal.trim() : 'start'}, runs while ${cond.trim()}.`;
+        break;
       }
-      return `Entering loop: ${sourceLine}`;
+      const whileMatch = sourceLine.match(/while\s*\((.+)\)/);
+      if (whileMatch) {
+        caption = `Starting while loop: condition (${whileMatch[1].trim()}).`;
+        break;
+      }
+      caption = `Entering loop: ${trimmed}`;
+      break;
     }
 
     case 'LOOP_ITERATION': {
+      // Check if this step is on a for-loop condition line (e.g., for(j = k; j <= i * n; j++))
+      const forMatch = sourceLine.match(/for\s*\([^;]*;\s*([^;]+);/);
+      if (forMatch) {
+        const cond = forMatch[1].trim();
+        const iter = (loopState?.currentLoop?.iteration ?? 0) + 1;
+        const loopVar = loopState?.currentLoop?.variable;
+        const varVal = (loopVar && variables[loopVar] !== undefined) ? ` (${loopVar} = ${variables[loopVar]})` : '';
+        caption = `Re-evaluating loop condition: ${cond} — starting iteration ${iter}${varVal}.`;
+        break;
+      }
+      const whileMatch = sourceLine.match(/while\s*\((.+)\)/);
+      if (whileMatch) {
+        const cond = whileMatch[1].trim();
+        const iter = (loopState?.currentLoop?.iteration ?? 0) + 1;
+        caption = `Re-evaluating while condition: ${cond} — iteration ${iter}.`;
+        break;
+      }
       if (loopState && loopState.currentLoop) {
         const loop = loopState.currentLoop;
         const iter = loop.iteration + 1;
         if (loop.variable && variables[loop.variable] !== undefined) {
-          return `Loop iteration ${iter}: ${loop.variable} = ${variables[loop.variable]}.`;
+          caption = `Loop iteration ${iter}: ${loop.variable} = ${variables[loop.variable]}.`;
+          break;
         }
-        return `Loop iteration ${iter}.`;
+        caption = `Loop iteration ${iter}.`;
+        break;
       }
-      return `Advancing loop iteration: ${sourceLine}`;
+      caption = `Advancing loop iteration: ${trimmed}`;
+      break;
     }
 
     case 'CONDITION_CHECKED': {
       const condMatch = sourceLine.match(/(?:if|else\s+if)\s*\((.+)\)/);
       const cond = condMatch ? condMatch[1] : sourceLine;
       const res = conditionResult === true ? 'TRUE (entering if-body)' : 'FALSE (skipping if-body)';
-      return `Evaluating condition: ${cond} → Result is ${res}.`;
+      caption = `Evaluating condition: ${cond} → Result is ${res}.`;
+      break;
     }
 
     case 'ARRAY_CHANGED': {
       if (arrayChanges && arrayChanges.length > 0) {
         const ac = arrayChanges[0];
         if (ac.row !== undefined) {
-          return `2D Array update: ${ac.array}[${ac.row}][${ac.col}] changed from ${ac.from} to ${ac.to}.`;
+          caption = `2D Array update: ${ac.array}[${ac.row}][${ac.col}] changed from ${ac.from} to ${ac.to}.`;
+          break;
         }
-        return `Array element ${ac.array}[${ac.index}] changed from ${ac.from} to ${ac.to}.`;
+        caption = `Array element ${ac.array}[${ac.index}] changed from ${ac.from} to ${ac.to}.`;
+        break;
       }
-      return `Modifying array element: ${sourceLine}`;
+      caption = `Modifying array element: ${sourceLine}`;
+      break;
     }
 
     case 'ARRAY_ACCESS': {
-      return `Reading array element: ${sourceLine}`;
+      caption = `Reading array element: ${sourceLine}`;
+      break;
     }
 
     case 'VARIABLE_CREATED': {
       const varEntries = Object.entries(variables).filter(([k]) => !(k in prevVariables));
       if (varEntries.length > 0) {
         const [k, v] = varEntries[0];
-        return `Initializing variable ${k} with value ${v}.`;
+        caption = `Initializing variable ${k} with value ${v}.`;
+        break;
       }
-      return `Declaring variable: ${sourceLine}`;
+      caption = `Declaring variable: ${sourceLine}`;
+      break;
     }
 
     case 'VARIABLE_CHANGED': {
       if (changes && changes.length > 0) {
         const c = changes[0];
-        return `Variable ${c.name} updated from ${c.from} to ${c.to}.`;
+        caption = `Variable ${c.name} updated from ${c.from} to ${c.to}.`;
+        break;
       }
-      return `Updating variable: ${sourceLine}`;
+      caption = `Updating variable: ${sourceLine}`;
+      break;
     }
 
     case 'PROGRAM_END': {
-      return `Program execution reached return 0 and successfully terminated.`;
+      caption = `Program execution reached return 0 and successfully terminated.`;
+      break;
     }
 
     case 'RUNTIME_ERROR': {
-      return `Runtime exception occurred during execution: ${event.runtimeError || 'Illegal Operation'}.`;
+      caption = `Runtime exception occurred during execution: ${event.runtimeError || 'Illegal Operation'}.`;
+      break;
     }
 
     default:
-      return `Executing: ${sourceLine}`;
+      caption = `Executing: ${sourceLine}`;
+      break;
   }
+
+  // Final Validation Pass: Guarantee consistency between caption and trace pointer variables
+  if (caption.includes('Dereferencing pointer') || 
+      caption.includes('reads the value stored at the address') || 
+      caption.includes('writes or modifies the value at the address')) {
+    const hasActualPointer = Object.keys(pointers || {}).some(pName => {
+      const rx = new RegExp(`(?:^|[^a-zA-Z0-9_\\]\\)])\\s*\\*+\\s*\\b${pName}\\b`);
+      return rx.test(sourceLine);
+    });
+    if (!hasActualPointer) {
+      if (/^(for|while)\s*\(/.test(trimmed)) {
+        const condMatch = sourceLine.match(/for\s*\([^;]+;\s*([^;]+);/);
+        const cond = condMatch ? condMatch[1].trim() : trimmed;
+        return `Re-evaluating loop condition: ${cond}`;
+      }
+      return `Executing statement: ${trimmed}`;
+    }
+  }
+
+  return caption;
 }

@@ -18,6 +18,7 @@ import { tmpdir } from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   parseMILocals, 
+  parseMIArguments,
   parseCallStack, 
   parseFrameInfo, 
   parseExpressionValue,
@@ -300,14 +301,25 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
           const stackRes = await sendQuery('-stack-list-frames');
           const callStack = parseCallStack(stackRes.join('\n'));
 
-          // 2. Get local variables
+          // 2. Get local variables & function arguments
           let localsRes = await sendQuery('-stack-list-locals --all-values');
           let locals = parseMILocals(localsRes.join('\n'));
+
+          try {
+            const argsRes = await sendQuery('-stack-list-arguments 1 0 0');
+            const fnArgs = parseMIArguments(argsRes.join('\n'));
+            Object.assign(locals, fnArgs);
+          } catch (e) {}
 
           if (Object.keys(locals).length === 0 && Object.keys(lastKnownVars).length > 0) {
             await new Promise(r => setTimeout(r, 20));
             localsRes = await sendQuery('-stack-list-locals --all-values');
             locals = parseMILocals(localsRes.join('\n'));
+            try {
+              const argsRes = await sendQuery('-stack-list-arguments 1 0 0');
+              const fnArgs = parseMIArguments(argsRes.join('\n'));
+              Object.assign(locals, fnArgs);
+            } catch (e) {}
           }
 
           const variables = {};

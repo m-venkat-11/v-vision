@@ -17,7 +17,7 @@ app.use('/api', summarizeRoute);
 app.use('/api', explainProblemRoute);
 
 // Health check
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 

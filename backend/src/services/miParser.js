@@ -67,6 +67,37 @@ export function parseMILocals(output) {
 }
 
 /**
+ * Parse arguments from -stack-list-arguments 1 0 0 output.
+ * Returns: { a: "0x61fe14", b: "0x61fe18", ... }
+ */
+export function parseMIArguments(output) {
+  const result = {};
+  const lines = output.split('\n');
+
+  for (const line of lines) {
+    if (line.startsWith('^done,stack-args=')) {
+      const argsStr = line.slice('^done,stack-args='.length);
+      const list = parseMIList(argsStr);
+
+      for (const item of list) {
+        const frame = item.frame || item;
+        if (frame && frame.args) {
+          const argList = Array.isArray(frame.args) ? frame.args : [frame.args];
+          for (const arg of argList) {
+            if (arg.name && arg.value !== undefined) {
+              result[arg.name] = arg.value;
+            }
+          }
+        }
+      }
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Parse stack frames from -stack-list-frames output.
  * Returns: [ { level: 0, func: "swap", line: 11, file: "..." }, ... ]
  */
