@@ -19,6 +19,7 @@ function App() {
   const [activeMode, setActiveMode] = useState('code'); // 'code' | 'problem'
   const [selectedExampleId, setSelectedExampleId] = useState(EXAMPLE_PROGRAMS[0].id);
   const [code, setCode] = useState(EXAMPLE_PROGRAMS[0].code);
+  const [customInput, setCustomInput] = useState(EXAMPLE_PROGRAMS[0].input || '');
   const [isLoading, setIsLoading] = useState(false);
   const [problemLoading, setProblemLoading] = useState(false);
   const [problemData, setProblemData] = useState(null);
@@ -49,7 +50,7 @@ function App() {
       const response = await fetch(`${API_URL}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, language: 'c' }),
+        body: JSON.stringify({ code, input: customInput, language: 'c' }),
       });
 
       const data = await response.json();
@@ -82,7 +83,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [code, isLoading, player]);
+  }, [code, customInput, isLoading, player]);
 
   // Question Mode: Submit problem query
   const handleQuestionSubmit = useCallback(async (problemQuery) => {
@@ -137,6 +138,7 @@ function App() {
     if (example) {
       setSelectedExampleId(exId);
       setCode(example.code);
+      setCustomInput(example.input || '');
       setError(null);
       setAppState('idle');
       player.setTimeline([]);
@@ -145,6 +147,7 @@ function App() {
 
   const handleResetEditor = useCallback(() => {
     setCode(currentExample.code);
+    setCustomInput(currentExample.input || '');
     setError(null);
     setAppState('idle');
     player.setTimeline([]);
@@ -281,6 +284,8 @@ function App() {
           <CodeEditor
             code={code}
             onCodeChange={setCode}
+            customInput={customInput}
+            onCustomInputChange={setCustomInput}
             highlightLine={appState === 'visualizing' ? currentLine : null}
             isPlaying={player.isPlaying}
             isLoading={isLoading}

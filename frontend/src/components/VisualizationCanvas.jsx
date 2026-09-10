@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Terminal } from 'lucide-react';
 import ArrayView from './ArrayView';
 import VariableView from './VariableView';
 import PointerView from './PointerView';
@@ -72,7 +72,7 @@ export default function VisualizationCanvas({
     return pVars;
   }, [variables, arrays, event]);
 
-  const hasAnySpatialDiagram = hasArrays || (hasLoops && !hasArrays) || hasPointers || hasStructs || hasHeap || hasStackOrCalls;
+  const hasAnySpatialDiagram = hasArrays || hasLoops || hasPointers || hasStructs || hasHeap || hasStackOrCalls;
 
   return (
     <div className="canvas-view-wrap">
@@ -88,8 +88,8 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 2. 2D/1D Iteration Space View (When program has loops but NO array) */}
-      {!hasArrays && hasLoops && (
+      {/* 2. Loop Storyteller — Shows for ALL programs with loops (teaches what the loop does) */}
+      {hasLoops && (
         <IterationSpaceView
           event={event}
           timeline={timeline}
@@ -97,6 +97,7 @@ export default function VisualizationCanvas({
           animationDuration={animationDuration}
         />
       )}
+
 
       {/* Persistent Loop & Condition Status Strip — Smooth single-line indicator */}
       <LoopConditionStrip event={event} />
@@ -149,6 +150,24 @@ export default function VisualizationCanvas({
           newVariables={event.newVariables}
           animationDuration={animationDuration}
         />
+      )}
+
+      {/* 8. Live Terminal Output: Shown when program produces stdout outside loop storyteller */}
+      {event?.stdout && !hasLoops && (
+        <div className="canvas-live-console">
+          <div className="live-console-header">
+            <div className="live-console-title">
+              <Terminal size={13} className="console-icon" />
+              <span>Program Output (stdout up to Step {currentStep + 1})</span>
+            </div>
+            {event.stepOutput && (
+              <span className="live-console-step-badge">
+                ▶ Line {event.line} just printed
+              </span>
+            )}
+          </div>
+          <pre className="live-console-content">{event.stdout}</pre>
+        </div>
       )}
 
       {/* Program End Banner */}

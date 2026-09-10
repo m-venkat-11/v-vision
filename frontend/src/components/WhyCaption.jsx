@@ -97,6 +97,13 @@ export default function WhyCaption({ event, step, animationDuration }) {
             <code className="source-code">{event.sourceLine}</code>
           </div>
         )}
+
+        {event.stepOutput && (
+          <div className="why-output-pill">
+            <Terminal size={11} />
+            <span>Printed: <code>{event.stepOutput.trim()}</code></span>
+          </div>
+        )}
       </div>
 
       <div className="why-narrative-text">

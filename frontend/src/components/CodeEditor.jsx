@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import { Play, RotateCcw, ZoomIn, ZoomOut, Terminal, Sparkles, X } from 'lucide-react';
 
 export default function CodeEditor({ 
   code, 
   onCodeChange, 
+  customInput = '',
+  onCustomInputChange,
   highlightLine, 
   isPlaying,     // ← only read-only when ACTIVELY playing
   isLoading,
@@ -18,6 +20,16 @@ export default function CodeEditor({
   const lineDecorationsRef = useRef([]);
   const breakpointDecorationsRef = useRef([]);
   const [fontSize, setFontSize] = useState(13.5);
+
+  const hasInputCall = /scanf|getchar|getc|fgets|cin/.test(code || '');
+  const [isInputOpen, setIsInputOpen] = useState(false);
+
+  // Auto-open input drawer when scanf / getchar is detected
+  useEffect(() => {
+    if (hasInputCall) {
+      setIsInputOpen(true);
+    }
+  }, [hasInputCall]);
 
   const handleEditorDidMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -163,6 +175,22 @@ export default function CodeEditor({
           </div>
 
           <button
+            type="button"
+            className={`btn-input-toggle ${isInputOpen ? 'active' : ''} ${hasInputCall ? 'highlight-scanf' : ''}`}
+            onClick={() => setIsInputOpen(v => !v)}
+            title="Configure Standard Input (stdin) for scanf / getchar"
+          >
+            <Terminal size={13} />
+            <span>Input (stdin)</span>
+            {hasInputCall && (
+              <span className="input-detect-dot" title="scanf() detected in code" />
+            )}
+            {customInput?.trim() && !hasInputCall && (
+              <span className="input-has-data-dot" title="Custom input provided" />
+            )}
+          </button>
+
+          <button
             className="btn btn-primary"
             onClick={onVisualize}
             disabled={isLoading || !code?.trim()}
@@ -186,59 +214,112 @@ export default function CodeEditor({
       </div>
 
       <div className="editor-wrapper">
-        <Editor
-          height="100%"
-          defaultLanguage="c"
-          value={code}
-          onChange={onCodeChange}
-          onMount={handleEditorDidMount}
-          options={{
-            fontSize,
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            lineNumbers: 'on',
-            glyphMargin: true,
-            folding: false,
-            lineDecorationsWidth: 14,
-            lineNumbersMinChars: 3,
-            renderLineHighlight: 'none',
-            overviewRulerBorder: false,
-            overviewRulerLanes: 0,
-            hideCursorInOverviewRuler: true,
-            padding: { top: 14, bottom: 14 },
-            wordWrap: 'on',
-            tabSize: 4,
-            automaticLayout: true,
-            cursorBlinking: 'smooth',
-            smoothScrolling: true,
-            // readOnly ONLY when isPlaying — never during pause or step-by-step
-            readOnly: isLoading || isPlaying || false,
-            // Never steal focus from clipboard shortcuts
-            contextmenu: true,
-          }}
-          theme="visualcode-dark-pro"
-        />
+        <div className="monaco-container">
+          <Editor
+            height="100%"
+            defaultLanguage="c"
+            value={code}
+            onChange={onCodeChange}
+            onMount={handleEditorDidMount}
+            options={{
+              fontSize,
+              fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              lineNumbers: 'on',
+              glyphMargin: true,
+              folding: false,
+              lineDecorationsWidth: 14,
+              lineNumbersMinChars: 3,
+              renderLineHighlight: 'none',
+              overviewRulerBorder: false,
+              overviewRulerLanes: 0,
+              hideCursorInOverviewRuler: true,
+              padding: { top: 14, bottom: 14 },
+              wordWrap: 'on',
+              tabSize: 4,
+              automaticLayout: true,
+              cursorBlinking: 'smooth',
+              smoothScrolling: true,
+              // readOnly ONLY when isPlaying — never during pause or step-by-step
+              readOnly: isLoading || isPlaying || false,
+              // Never steal focus from clipboard shortcuts
+              contextmenu: true,
+            }}
+            theme="visualcode-dark-pro"
+          />
 
-        {/* Live execution overlay — shown only when visualizing */}
-        {highlightLine && currentEvent && (
-          <div className="editor-live-status-bar">
-            <div className="editor-status-left">
-              <span className="exec-arrow">▶</span>
-              <span className="exec-line-text">
-                {currentEvent.sourceLine || `Line ${highlightLine}`}
-              </span>
-            </div>
-            {activeVars.length > 0 && (
-              <div className="editor-status-vars">
-                {activeVars.map(([k, v]) => (
-                  <span key={k} className="inline-var-pill">
-                    <span className="var-key">{k}:</span>
-                    <span className="var-val">{typeof v === 'number' ? v : JSON.stringify(v)}</span>
-                  </span>
-                ))}
+          {/* Live execution overlay — shown only when visualizing */}
+          {highlightLine && currentEvent && (
+            <div className="editor-live-status-bar">
+              <div className="editor-status-left">
+                <span className="exec-arrow">▶</span>
+                <span className="exec-line-text">
+                  {currentEvent.sourceLine || `Line ${highlightLine}`}
+                </span>
               </div>
-            )}
+              {activeVars.length > 0 && (
+                <div className="editor-status-vars">
+                  {activeVars.map(([k, v]) => (
+                    <span key={k} className="inline-var-pill">
+                      <span className="var-key">{k}:</span>
+                      <span className="var-val">{typeof v === 'number' ? v : JSON.stringify(v)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Collapsible Standard Input (stdin) Drawer */}
+        {isInputOpen && (
+          <div className="editor-stdin-drawer">
+            <div className="stdin-drawer-header">
+              <div className="stdin-header-left">
+                <Terminal size={13} className="stdin-icon" />
+                <span className="stdin-title">Standard Input (stdin)</span>
+                {hasInputCall ? (
+                  <span className="stdin-badge-detected">
+                    <Sparkles size={11} />
+                    scanf() active
+                  </span>
+                ) : (
+                  <span className="stdin-badge-optional">Optional</span>
+                )}
+              </div>
+              <div className="stdin-header-right">
+                <span className="stdin-hint">Inputs for scanf() — space or newline separated</span>
+                {customInput ? (
+                  <button
+                    type="button"
+                    className="stdin-action-btn"
+                    onClick={() => onCustomInputChange?.('')}
+                    title="Clear input"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="stdin-close-btn"
+                  onClick={() => setIsInputOpen(false)}
+                  title="Hide input panel"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+            <div className="stdin-textarea-wrap">
+              <textarea
+                className="stdin-textarea"
+                value={customInput || ''}
+                onChange={(e) => onCustomInputChange?.(e.target.value)}
+                placeholder={`Enter inputs for scanf() here...\nExample for reading array elements:\n5\n12 45 7 23 9`}
+                rows={3}
+                spellCheck={false}
+              />
+            </div>
           </div>
         )}
       </div>

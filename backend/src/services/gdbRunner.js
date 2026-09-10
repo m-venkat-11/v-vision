@@ -39,7 +39,7 @@ if (!existsSync(TEMP_DIR)) {
  * Public execution entry point.
  * Accepts any valid C code string, executes it, and returns the structured timeline.
  */
-export async function runAndTrace(sourceCode) {
+export async function runAndTrace(sourceCode, input = '') {
   if (!sourceCode || typeof sourceCode !== 'string' || !sourceCode.trim()) {
     return {
       success: false,
@@ -51,14 +51,24 @@ export async function runAndTrace(sourceCode) {
   const id = uuidv4().slice(0, 8);
   const srcName = `prog_${id}.c`;
   const exeName = `prog_${id}.exe`;
+  const inName = `input_${id}.txt`;
   const srcPath = join(TEMP_DIR, srcName);
   const exePath = join(TEMP_DIR, exeName);
+  const inPath = join(TEMP_DIR, inName);
 
   try {
-    // Step 1: Write source code. If scanf / getchar is used, inject non-blocking in-memory stream with #line directive
+    // Step 1: Write source code. Handle stdin (scanf / getchar / custom input) via GCC constructor freopen
     let finalSource = sourceCode;
-    if (/scanf|getchar|getc/.test(sourceCode)) {
-      finalSource = `#include <stdio.h>\nstatic const char *__v_in = "10 20 30 40 50 60 70 80 90 100 42 99\\nhello\\nworld\\n";\n#define scanf(fmt, ...) sscanf(__v_in, fmt, __VA_ARGS__)\n#define getchar() 'A'\n#line 1 "${srcName}"\n${sourceCode}`;
+    const hasInputRead = /scanf|getchar|getc|fgets|cin/.test(sourceCode);
+    const hasCustomInput = typeof input === 'string' && input.trim().length > 0;
+
+    if (hasInputRead || hasCustomInput) {
+      const stdinContent = hasCustomInput ? input : "5\n10 20 30 40 50 60 70 80 90 100\nhello\nworld\n";
+      writeFileSync(inPath, stdinContent, 'utf-8');
+
+      // Seamlessly redirect stdin to inName BEFORE main() starts using GCC constructor
+      // Preserves original line numbering perfectly with #line directive
+      finalSource = `#include <stdio.h>\n__attribute__((constructor)) static void __v_init_stdin(void) {\n  freopen("${inName.replace(/\\/g, '/')}", "r", stdin);\n}\n#line 1 "${srcName}"\n${sourceCode}`;
     }
     writeFileSync(srcPath, finalSource, 'utf-8');
 
@@ -98,7 +108,7 @@ export async function runAndTrace(sourceCode) {
 
   } finally {
     // Cleanup temporary files
-    cleanup(srcPath, exePath);
+    cleanup(srcPath, exePath, inPath);
   }
 }
 
@@ -254,9 +264,16 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
         // Insert breakpoint at main
         await sendQuery('-break-insert main');
 
-        // Run program and wait for breakpoint stop
-        const runRes = await sendExec('-exec-run');
-        const runStr = runRes.join('\n');
+        // Run program and wait for breakpoint stop (with retry for transient Windows file locks)
+        let runRes = await sendExec('-exec-run');
+        let runStr = runRes.join('\n');
+        let retries = 0;
+        while (runStr.includes('^error') && retries < 3) {
+          retries++;
+          await new Promise(r => setTimeout(r, 100));
+          runRes = await sendExec('-exec-run');
+          runStr = runRes.join('\n');
+        }
         if (runStr.includes('^error')) {
           throw new Error('Could not launch program: ' + runStr);
         }
@@ -520,6 +537,12 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
           });
         }
 
+        try {
+          gdb.stdin.write('quit\n');
+          gdb.kill();
+        } catch (e) {}
+        clearTimeout(timeoutHandle);
+
         resolve({
           success: true,
           rawSteps,
@@ -540,9 +563,10 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
   });
 }
 
-function cleanup(srcPath, exePath) {
+function cleanup(srcPath, exePath, inPath) {
   try { if (existsSync(srcPath)) unlinkSync(srcPath); } catch (e) {}
   try { if (existsSync(exePath)) unlinkSync(exePath); } catch (e) {}
+  try { if (inPath && existsSync(inPath)) unlinkSync(inPath); } catch (e) {}
 }
 
 

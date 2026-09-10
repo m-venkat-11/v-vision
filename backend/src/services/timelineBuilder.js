@@ -86,6 +86,113 @@ function isTruePointerDereference(sourceLine, activePointers, allKnownPointers) 
 }
 
 /**
+ * Accurately evaluate printf / puts statements given current variables & arrays
+ */
+export function evaluatePrintf(sourceLine, variables = {}, arrays = {}) {
+  if (!sourceLine) return null;
+  const trimmed = sourceLine.trim();
+
+  // Handle puts("...")
+  const putsMatch = trimmed.match(/^puts\s*\(\s*"([^"]*)"\s*\)/);
+  if (putsMatch) {
+    return putsMatch[1] + '\n';
+  }
+
+  // Handle printf("...")
+  const printfMatch = trimmed.match(/printf\s*\(\s*"([^"]*)"(?:\s*,\s*([\s\S]+))?\s*\)\s*;/);
+  if (!printfMatch) return null;
+
+  let formatStr = printfMatch[1];
+  const argsRaw = printfMatch[2];
+
+  if (!argsRaw) {
+    return formatStr.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+  }
+
+  // Split args by comma respecting brackets/parens
+  const args = [];
+  let currentArg = '';
+  let parenDepth = 0;
+  let bracketDepth = 0;
+
+  for (let i = 0; i < argsRaw.length; i++) {
+    const char = argsRaw[i];
+    if (char === '(') parenDepth++;
+    else if (char === ')') parenDepth--;
+    else if (char === '[') bracketDepth++;
+    else if (char === ']') bracketDepth--;
+
+    if (char === ',' && parenDepth === 0 && bracketDepth === 0) {
+      args.push(currentArg.trim());
+      currentArg = '';
+    } else {
+      currentArg += char;
+    }
+  }
+  if (currentArg.trim()) {
+    args.push(currentArg.trim());
+  }
+
+  function evalArg(argStr) {
+    // 1. Direct variable lookup
+    if (variables[argStr] !== undefined) {
+      return variables[argStr];
+    }
+
+    // 2. 1D Array lookup e.g. arr[i] or arr[0]
+    const arr1d = argStr.match(/^([a-zA-Z_]\w*)\[([^\]]+)\]$/);
+    if (arr1d) {
+      const arrName = arr1d[1];
+      const idxExpr = arr1d[2].trim();
+      const idx = variables[idxExpr] !== undefined ? variables[idxExpr] : parseInt(idxExpr, 10);
+      if (arrays[arrName] && Array.isArray(arrays[arrName]) && !isNaN(idx)) {
+        return arrays[arrName][idx];
+      }
+    }
+
+    // 3. 2D Array lookup e.g. m[i][j]
+    const arr2d = argStr.match(/^([a-zA-Z_]\w*)\[([^\]]+)\]\[([^\]]+)\]$/);
+    if (arr2d) {
+      const arrName = arr2d[1];
+      const rExpr = arr2d[2].trim();
+      const cExpr = arr2d[3].trim();
+      const r = variables[rExpr] !== undefined ? variables[rExpr] : parseInt(rExpr, 10);
+      const c = variables[cExpr] !== undefined ? variables[cExpr] : parseInt(cExpr, 10);
+      if (arrays[arrName] && Array.isArray(arrays[arrName]) && !isNaN(r) && !isNaN(c)) {
+        return arrays[arrName][r]?.[c];
+      }
+    }
+
+    // 4. Expression evaluation e.g. i * 10 or n + 1
+    try {
+      let expr = argStr;
+      for (const [v, val] of Object.entries(variables)) {
+        if (typeof val === 'number') {
+          expr = expr.replace(new RegExp(`\\b${v}\\b`, 'g'), String(val));
+        }
+      }
+      const sanitized = expr.replace(/[^0-9+\-*/%(). ]/g, '');
+      if (sanitized.length > 0 && sanitized.length < 40) {
+        return Function('"use strict"; return (' + sanitized + ')')();
+      }
+    } catch {}
+
+    return argStr;
+  }
+
+  let argIndex = 0;
+  const replaced = formatStr.replace(/%[difsugx]/g, (match) => {
+    if (argIndex < args.length) {
+      const val = evalArg(args[argIndex++]);
+      return val !== undefined ? val : match;
+    }
+    return match;
+  });
+
+  return replaced.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+}
+
+/**
  * Build structured timeline events from raw GDB steps
  */
 export function buildTimeline(rawSteps, sourceLines, heapState) {
@@ -96,6 +203,7 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
   let loopStack = [];
   let seenLoopLines = new Set();
   let stepCounter = 0;
+  let cumulativeStdout = '';
   const decls = findDeclarations(sourceLines);
 
   const allKnownPointers = new Set();
@@ -265,6 +373,12 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     // Array highlight calculation
     const highlight = buildArrayHighlight(sourceLine, activeVariables, activeArrays);
 
+    // Evaluate printf / puts output for this step
+    const stepOutput = evaluatePrintf(sourceLine, activeVariables, activeArrays);
+    if (stepOutput) {
+      cumulativeStdout += stepOutput;
+    }
+
     const event = {
       step: stepCounter++,
       line,
@@ -279,6 +393,8 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
       pointers: { ...activePointers },
       heapAllocations: raw.heapAllocations || [],
       highlight,
+      ...(stepOutput && { stepOutput }),
+      stdout: cumulativeStdout,
       ...(conditionResult !== null && { conditionResult }),
       ...(changedVars.length > 0 && { changes: changedVars }),
       ...(newVars.length > 0 && { newVariables: newVars }),
@@ -329,6 +445,7 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
       heapAllocations: last.heapAllocations || [],
       memoryLeaks: unFreedBlocks,
       highlight: {},
+      stdout: cumulativeStdout,
       why: unFreedBlocks.length > 0 
         ? `Program ended with ${unFreedBlocks.length} unfreed heap memory block(s) (Memory Leak Warning!).`
         : `Program successfully finished execution with return 0.`

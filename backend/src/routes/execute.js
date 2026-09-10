@@ -12,7 +12,7 @@ export const executeRoute = Router();
 
 executeRoute.post('/execute', async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, input } = req.body;
 
     if (!code || typeof code !== 'string' || !code.trim()) {
       return res.status(400).json({
@@ -30,8 +30,8 @@ executeRoute.post('/execute', async (req, res) => {
       });
     }
 
-    // Call the isolated GDB runner module
-    const result = await runAndTrace(code);
+    // Call the isolated GDB runner module with custom input
+    const result = await runAndTrace(code, input || '');
 
     return res.json(result);
 

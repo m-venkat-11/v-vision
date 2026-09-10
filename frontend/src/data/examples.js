@@ -171,5 +171,38 @@ int main() {
     printf("Transposed: %d %d\\n", m[0][1], m[1][0]);
     return 0;
 }`
+  },
+  {
+    id: 'scanf-array',
+    name: 'Input Array (scanf)',
+    category: 'Input & Loops',
+    complexity: 'O(n)',
+    description: 'Reads dynamic elements from standard input using scanf() into an array and finds the maximum',
+    input: "5\n12 45 7 23 9",
+    code: `#include <stdio.h>
+
+int main() {
+    int n;
+    int arr[10];
+    
+    // Read count of numbers
+    scanf("%d", &n);
+    
+    // Read elements into array
+    for (int i = 0; i < n; i++) {
+        scanf("%d", &arr[i]);
+    }
+    
+    // Find maximum element
+    int max = arr[0];
+    for (int i = 1; i < n; i++) {
+        if (arr[i] > max) {
+            max = arr[i];
+        }
+    }
+    
+    printf("Read %d elements. Maximum is %d\\n", n, max);
+    return 0;
+}`
   }
 ];

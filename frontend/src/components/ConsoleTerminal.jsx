@@ -10,6 +10,17 @@ export function extractStdout(timeline, currentStep) {
 
   for (let i = 0; i <= currentStep && i < timeline.length; i++) {
     const ev = timeline[i];
+
+    // First priority: use backend-evaluated stepOutput
+    if (ev?.stepOutput) {
+      lines.push({
+        step: i,
+        text: ev.stepOutput,
+        isLatest: i === currentStep
+      });
+      continue;
+    }
+
     const src = ev?.sourceLine || '';
 
     // Check for printf call
