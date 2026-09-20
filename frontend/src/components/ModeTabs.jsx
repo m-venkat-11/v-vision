@@ -13,7 +13,8 @@ export default function ModeTabs({ activeMode = 'code', onSelectMode }) {
         onClick={() => onSelectMode('code')}
       >
         <Code2 size={14} />
-        <span>Visualize Code</span>
+        <span className="mode-label-desktop">Visualize Code</span>
+        <span className="mode-label-mobile">Code</span>
       </button>
 
       <button
@@ -21,8 +22,9 @@ export default function ModeTabs({ activeMode = 'code', onSelectMode }) {
         onClick={() => onSelectMode('problem')}
       >
         <HelpCircle size={14} />
-        <span>Visualize a Problem</span>
-        <span className="mode-new-pill">AI Mode</span>
+        <span className="mode-label-desktop">Visualize a Problem</span>
+        <span className="mode-label-mobile">Problem AI</span>
+        <span className="mode-new-pill">AI</span>
       </button>
     </div>
   );

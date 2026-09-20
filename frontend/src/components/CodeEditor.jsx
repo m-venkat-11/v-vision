@@ -1,6 +1,21 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, RotateCcw, ZoomIn, ZoomOut, Terminal, Sparkles, X } from 'lucide-react';
+import { 
+  Play, 
+  RotateCcw, 
+  ZoomIn, 
+  ZoomOut, 
+  Terminal, 
+  Sparkles, 
+  X, 
+  Copy, 
+  Check, 
+  Clipboard, 
+  Trash2, 
+  Smartphone, 
+  Monitor,
+  Code2
+} from 'lucide-react';
 
 export default function CodeEditor({ 
   code, 
@@ -17,12 +32,119 @@ export default function CodeEditor({
 }) {
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
+  const mobileTextareaRef = useRef(null);
+  const mobileGutterRef = useRef(null);
   const lineDecorationsRef = useRef([]);
   const breakpointDecorationsRef = useRef([]);
   const [fontSize, setFontSize] = useState(13.5);
 
+  // Editor mode: 'monaco' vs 'mobile' (auto-detects mobile screens <= 768px)
+  const [editorMode, setEditorMode] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      return 'mobile';
+    }
+    return 'monaco';
+  });
+
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [pasteModalText, setPasteModalText] = useState('');
+  const [notificationMsg, setNotificationMsg] = useState('');
+
   const hasInputCall = /scanf|getchar|getc|fgets|cin/.test(code || '');
   const [isInputOpen, setIsInputOpen] = useState(false);
+
+  // Show temporary toast notification
+  const showNotification = useCallback((msg) => {
+    setNotificationMsg(msg);
+    setTimeout(() => setNotificationMsg(''), 2500);
+  }, []);
+
+  // 1-Tap Copy All Code
+  const handleCopyAll = useCallback(async () => {
+    if (!code) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = code;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopySuccess(true);
+      showNotification('✓ Code copied to clipboard!');
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      showNotification('Failed to copy. Please select text manually.');
+    }
+  }, [code, showNotification]);
+
+  // 1-Tap Paste Code
+  const handlePasteCode = useCallback(async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          onCodeChange(text);
+          showNotification('✓ Code pasted successfully!');
+          return;
+        }
+      }
+      // If clipboard read was empty or blocked by browser permissions, open native paste drawer
+      setPasteModalText('');
+      setPasteModalOpen(true);
+    } catch (err) {
+      // Permission denied or touch browser security block → open paste modal fallback
+      setPasteModalText('');
+      setPasteModalOpen(true);
+    }
+  }, [onCodeChange, showNotification]);
+
+  // Apply code from paste modal
+  const handleApplyPastedModal = useCallback(() => {
+    if (pasteModalText.trim()) {
+      onCodeChange(pasteModalText);
+      showNotification('✓ Code pasted successfully!');
+    }
+    setPasteModalOpen(false);
+    setPasteModalText('');
+  }, [pasteModalText, onCodeChange, showNotification]);
+
+  // Clear code
+  const handleClearCode = useCallback(() => {
+    if (window.confirm('Clear all code in the editor?')) {
+      onCodeChange('');
+      showNotification('Editor cleared');
+    }
+  }, [onCodeChange, showNotification]);
+
+  // Sync scroll for mobile line numbers gutter
+  const handleMobileScroll = useCallback((e) => {
+    if (mobileGutterRef.current) {
+      mobileGutterRef.current.scrollTop = e.target.scrollTop;
+    }
+  }, []);
+
+  // Handle Tab key in mobile textarea
+  const handleMobileKeyDown = useCallback((e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const val = target.value;
+      const newVal = val.substring(0, start) + '    ' + val.substring(end);
+      onCodeChange(newVal);
+      setTimeout(() => {
+        target.selectionStart = target.selectionEnd = start + 4;
+      }, 0);
+    }
+  }, [onCodeChange]);
 
   // Auto-open input drawer when scanf / getchar is detected
   useEffect(() => {
@@ -133,6 +255,9 @@ export default function CodeEditor({
         .slice(0, 4)
     : [];
 
+  const linesCount = (code || '').split('\n').length;
+  const lineNumbers = Array.from({ length: Math.max(linesCount, 1) }, (_, i) => i + 1);
+
   return (
     <div className="panel code-panel">
       <div className="panel-header">
@@ -213,64 +338,168 @@ export default function CodeEditor({
         </div>
       </div>
 
-      <div className="editor-wrapper">
-        <div className="monaco-container">
-          <Editor
-            height="100%"
-            defaultLanguage="c"
-            value={code}
-            onChange={onCodeChange}
-            onMount={handleEditorDidMount}
-            options={{
-              fontSize,
-              fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              lineNumbers: 'on',
-              glyphMargin: true,
-              folding: false,
-              lineDecorationsWidth: 14,
-              lineNumbersMinChars: 3,
-              renderLineHighlight: 'none',
-              overviewRulerBorder: false,
-              overviewRulerLanes: 0,
-              hideCursorInOverviewRuler: true,
-              padding: { top: 14, bottom: 14 },
-              wordWrap: 'on',
-              tabSize: 4,
-              automaticLayout: true,
-              cursorBlinking: 'smooth',
-              smoothScrolling: true,
-              // readOnly ONLY when isPlaying — never during pause or step-by-step
-              readOnly: isLoading || isPlaying || false,
-              // Never steal focus from clipboard shortcuts
-              contextmenu: true,
-            }}
-            theme="visualcode-dark-pro"
-          />
+      {/* 1-Tap Quick Action Toolbar (Mobile & Desktop) */}
+      <div className="editor-quick-toolbar">
+        <div className="quick-toolbar-left">
+          <button
+            type="button"
+            className={`toolbar-action-btn ${copySuccess ? 'btn-success-flash' : ''}`}
+            onClick={handleCopyAll}
+            title="Copy whole code to clipboard (1-tap)"
+          >
+            {copySuccess ? <Check size={13} /> : <Copy size={13} />}
+            <span>{copySuccess ? 'Copied!' : 'Copy All'}</span>
+          </button>
 
-          {/* Live execution overlay — shown only when visualizing */}
-          {highlightLine && currentEvent && (
-            <div className="editor-live-status-bar">
-              <div className="editor-status-left">
-                <span className="exec-arrow">▶</span>
-                <span className="exec-line-text">
-                  {currentEvent.sourceLine || `Line ${highlightLine}`}
-                </span>
-              </div>
-              {activeVars.length > 0 && (
-                <div className="editor-status-vars">
-                  {activeVars.map(([k, v]) => (
-                    <span key={k} className="inline-var-pill">
-                      <span className="var-key">{k}:</span>
-                      <span className="var-val">{typeof v === 'number' ? v : JSON.stringify(v)}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <button
+            type="button"
+            className="toolbar-action-btn"
+            onClick={handlePasteCode}
+            title="Paste code from clipboard (1-tap)"
+          >
+            <Clipboard size={13} />
+            <span>Paste Code</span>
+          </button>
+
+          <button
+            type="button"
+            className="toolbar-action-btn btn-ghost-subtle"
+            onClick={handleClearCode}
+            title="Clear all code"
+          >
+            <Trash2 size={13} />
+            <span>Clear</span>
+          </button>
         </div>
+
+        <div className="quick-toolbar-right">
+          {/* Toggle between Monaco Editor and Mobile-Friendly Native Editor */}
+          <button
+            type="button"
+            className={`editor-mode-toggle-btn ${editorMode === 'mobile' ? 'mode-mobile' : 'mode-monaco'}`}
+            onClick={() => setEditorMode(m => m === 'mobile' ? 'monaco' : 'mobile')}
+            title={editorMode === 'mobile' ? 'Switch to Monaco Pro Editor' : 'Switch to Lightweight Mobile Editor'}
+          >
+            {editorMode === 'mobile' ? (
+              <>
+                <Smartphone size={13} />
+                <span>Mobile Editor</span>
+                <span className="mode-switch-tag">Switch to Monaco</span>
+              </>
+            ) : (
+              <>
+                <Monitor size={13} />
+                <span>Monaco Pro</span>
+                <span className="mode-switch-tag">Switch to Mobile</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Toast Notification Bar */}
+      {notificationMsg && (
+        <div className="editor-toast-notification">
+          <span>{notificationMsg}</span>
+        </div>
+      )}
+
+      {/* Code Editor Body */}
+      <div className="editor-wrapper">
+        {editorMode === 'mobile' ? (
+          /* High-Performance Mobile Native Editor with Synced Line Numbers */
+          <div className="mobile-editor-container">
+            <div 
+              ref={mobileGutterRef} 
+              className="mobile-editor-gutter"
+              style={{ fontSize: `${fontSize}px` }}
+            >
+              {lineNumbers.map(n => (
+                <div 
+                  key={n} 
+                  className={`mobile-gutter-line ${highlightLine === n ? 'active-gutter-line' : ''} ${breakpoints.has(n) ? 'breakpoint-gutter-line' : ''}`}
+                  onClick={() => onToggleBreakpoint?.(n)}
+                >
+                  {breakpoints.has(n) && <span className="mobile-breakpoint-dot">●</span>}
+                  <span>{n}</span>
+                </div>
+              ))}
+            </div>
+
+            <textarea
+              ref={mobileTextareaRef}
+              className="mobile-editor-textarea"
+              style={{ fontSize: `${fontSize}px` }}
+              value={code}
+              onChange={(e) => onCodeChange(e.target.value)}
+              onScroll={handleMobileScroll}
+              onKeyDown={handleMobileKeyDown}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
+              readOnly={isPlaying || isLoading}
+              placeholder="Type or paste your C code here..."
+            />
+          </div>
+        ) : (
+          /* Desktop Monaco Pro Editor */
+          <div className="monaco-container">
+            <Editor
+              height="100%"
+              defaultLanguage="c"
+              value={code}
+              onChange={onCodeChange}
+              onMount={handleEditorDidMount}
+              options={{
+                fontSize,
+                fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                lineNumbers: 'on',
+                glyphMargin: true,
+                folding: false,
+                lineDecorationsWidth: 14,
+                lineNumbersMinChars: 3,
+                renderLineHighlight: 'none',
+                overviewRulerBorder: false,
+                overviewRulerLanes: 0,
+                hideCursorInOverviewRuler: true,
+                padding: { top: 14, bottom: 14 },
+                wordWrap: 'on',
+                tabSize: 4,
+                automaticLayout: true,
+                cursorBlinking: 'smooth',
+                smoothScrolling: true,
+                readOnly: isLoading || isPlaying || false,
+                contextmenu: true,
+              }}
+              theme="visualcode-dark-pro"
+            />
+          </div>
+        )}
+
+        {/* Live execution overlay — shown only when visualizing */}
+        {highlightLine && currentEvent && (
+          <div className="editor-live-status-bar">
+            <div className="editor-status-left">
+              <span className="exec-arrow">▶</span>
+              <span className="exec-line-text">
+                {currentEvent.sourceLine || `Line ${highlightLine}`}
+              </span>
+            </div>
+            {activeVars.length > 0 && (
+              <div className="editor-status-vars">
+                {activeVars.map(([k, v]) => (
+                  <span key={k} className="inline-var-pill">
+                    <span className="var-key">{k}:</span>
+                    <span className="var-val">{typeof v === 'number' ? v : JSON.stringify(v)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Collapsible Standard Input (stdin) Drawer */}
         {isInputOpen && (
@@ -319,6 +548,56 @@ export default function CodeEditor({
                 rows={3}
                 spellCheck={false}
               />
+            </div>
+          </div>
+        )}
+
+        {/* Mobile / Fallback Paste Modal Drawer */}
+        {pasteModalOpen && (
+          <div className="paste-modal-backdrop" onClick={() => setPasteModalOpen(false)}>
+            <div className="paste-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="paste-modal-header">
+                <div className="paste-modal-title">
+                  <Clipboard size={16} />
+                  <span>Paste Code from Device</span>
+                </div>
+                <button 
+                  className="icon-btn-ghost" 
+                  onClick={() => setPasteModalOpen(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="paste-modal-instruction">
+                Long-press inside the box below and tap <strong>Paste</strong>, then click <strong>Insert Code</strong>:
+              </p>
+              <textarea
+                className="paste-modal-textarea"
+                value={pasteModalText}
+                onChange={(e) => setPasteModalText(e.target.value)}
+                placeholder="Long-press here and tap Paste..."
+                autoFocus
+                rows={8}
+                spellCheck={false}
+              />
+              <div className="paste-modal-actions">
+                <button 
+                  type="button"
+                  className="btn btn-secondary" 
+                  onClick={() => setPasteModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  className="btn btn-primary" 
+                  onClick={handleApplyPastedModal}
+                  disabled={!pasteModalText.trim()}
+                >
+                  <Check size={14} />
+                  <span>Insert Code Into Editor</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

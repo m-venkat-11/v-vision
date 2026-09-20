@@ -83,6 +83,8 @@ function Array1D({
   snapCfg,
   animationDuration
 }) {
+  const isCharArray = values.length > 0 && typeof values[0] === 'string' && values[0].length === 1;
+
   return (
     <div className="array-card">
       <div className="array-card-header">
@@ -91,9 +93,11 @@ function Array1D({
             <Layers size={13} />
           </div>
           <div className="array-meta">
-            <span className="array-type">int[]</span>
+            <span className="array-type">{isCharArray ? 'char[] (string)' : 'int[]'}</span>
             <span className="array-name">{name}</span>
-            <span className="array-length">size: {values.length}</span>
+            <span className="array-length">
+              {isCharArray ? `"${values.join('')}" (len: ${values.length})` : `size: ${values.length}`}
+            </span>
           </div>
         </div>
 

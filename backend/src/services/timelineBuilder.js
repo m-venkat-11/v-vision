@@ -31,6 +31,15 @@ export const EventType = {
   STATEMENT: 'STATEMENT'
 };
 
+function isGarbageValue(val) {
+  if (typeof val !== 'number') return false;
+  if (val === 32767 || val === -32768) return true;
+  if (val === -134542720 || val === 4194432) return true;
+  if (val === 2147483647 || val === -2147483648) return true;
+  if (Math.abs(val) > 2000000) return true;
+  return false;
+}
+
 function findDeclarations(sourceLines) {
   const decls = {};
   if (!Array.isArray(sourceLines)) return decls;
@@ -41,17 +50,37 @@ function findDeclarations(sourceLines) {
     if (/struct\s+\w+\s*\{/.test(line)) continue;
     if (/\w+\s*\([^)]*\)\s*\{?$/.test(line.trim()) && !line.includes('=')) continue;
 
-    const beforeAssign = line.split('=')[0];
-    const afterType = beforeAssign.replace(typeRegex, '');
-    const parts = afterType.split(',');
+    const parts = line.split(',');
     for (const part of parts) {
       const m = part.match(/\*?\s*([a-zA-Z_]\w*)\s*(?:\[.*\])?/);
       if (m && m[1] && !['main', 'return', 'if', 'for', 'while', 'const'].includes(m[1])) {
-        if (!decls[m[1]]) decls[m[1]] = l + 1;
+        const varName = m[1];
+        if (!decls[varName]) {
+          const hasInit = part.includes('=') || (line.includes('=') && parts.length === 1);
+          decls[varName] = {
+            line: l + 1,
+            hasInit,
+            isChar: /char\b/.test(line)
+          };
+        }
       }
     }
   }
   return decls;
+}
+
+function isVariableAssigned(varName, currentLine, sourceLines, declInfo) {
+  if (!sourceLines || !Array.isArray(sourceLines)) return false;
+  if (declInfo?.hasInit && currentLine >= declInfo.line) return true;
+  const assignRegex = new RegExp(`(?:\\b${varName}\\s*(?:=|\\+=|-=|\\*=|/=|%=|\\+\\+|--)|(?:\\+\\+|--)\\s*${varName}\\b|scanf\\s*\\([^)]*&?\\s*${varName}\\b|for\\s*\\(\\s*(?:int\\s+)?${varName}\\s*=)`);
+  const maxLine = Math.min(currentLine, sourceLines.length);
+  for (let l = 0; l < maxLine; l++) {
+    const sLine = sourceLines[l];
+    if (assignRegex.test(sLine)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isTruePointerDereference(sourceLine, activePointers, allKnownPointers) {
@@ -251,23 +280,38 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     const isLoopHeader = /^(for|while)\s*\(/.test(sourceLine);
     const activeVariables = {};
     for (const [k, v] of Object.entries(variables || {})) {
-      const declLine = decls[k];
+      const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
+      const declLine = declInfo?.line;
       if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+        const assigned = isVariableAssigned(k, line, sourceLines, declInfo);
+        // Suppress uninitialized stack garbage
+        if (isGarbageValue(v) && !assigned) {
+          continue;
+        }
         activeVariables[k] = v;
       }
     }
 
     const activeArrays = {};
     for (const [k, v] of Object.entries(arrays || {})) {
-      const declLine = decls[k];
+      const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
+      const declLine = declInfo?.line;
       if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
         activeArrays[k] = v;
       }
     }
 
+    // If a string variable is in activeVariables, ensure its character array is in activeArrays
+    for (const [k, v] of Object.entries(activeVariables)) {
+      if (typeof v === 'string' && v.length > 0 && !activeArrays[k]) {
+        activeArrays[k] = v.split('');
+      }
+    }
+
     const activeStructs = {};
     for (const [k, v] of Object.entries(structs || {})) {
-      const declLine = decls[k];
+      const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
+      const declLine = declInfo?.line;
       if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
         activeStructs[k] = v;
       }
@@ -275,7 +319,8 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
 
     const activePointers = {};
     for (const [k, v] of Object.entries(pointers || {})) {
-      const declLine = decls[k];
+      const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
+      const declLine = declInfo?.line;
       if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
         activePointers[k] = v;
       }

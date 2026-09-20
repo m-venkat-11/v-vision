@@ -401,6 +401,17 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
               }
             }
 
+            // Check if string / char array (e.g. "hello" or 0x61fe10 "hello")
+            const strMatch = typeof rawVal === 'string' && rawVal.match(/^(?:0x[0-9a-fA-F]+\s+)?"((?:\\.|[^"\\])*)"/);
+            if (strMatch) {
+              const cleanStr = strMatch[1].split('\\000')[0].replace(/\\"/g, '"');
+              variables[name] = cleanStr;
+              if (cleanStr.length > 0) {
+                arrays[name] = cleanStr.split('');
+              }
+              continue;
+            }
+
             // Scalar variable (int, float, char, double)
             const num = parseFloat(rawVal);
             variables[name] = isNaN(num) ? rawVal : num;

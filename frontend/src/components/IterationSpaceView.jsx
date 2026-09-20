@@ -1,15 +1,36 @@
 import { useMemo, useRef, useEffect } from 'react';
-import { RotateCw, Zap, ChevronRight, CheckCircle2, XCircle, TrendingUp, TrendingDown, Minus, Activity, Eye, Terminal } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  RotateCw, Play, CheckCircle2, XCircle, Zap, Activity, 
+  ChevronRight, Terminal, TrendingUp, TrendingDown, Eye, HelpCircle,
+  Sparkles, Layers
+} from 'lucide-react';
 
 /**
- * IterationSpaceView — "Step-by-Step Loop Storyteller"
+ * Filter out uninitialized C stack garbage numbers (e.g. 32767, -134542720, etc.)
+ */
+function isCleanValue(v) {
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'number') {
+    if (isNaN(v)) return false;
+    if (v === 32767 || v === -32768) return false;
+    if (v === -134542720 || v === 4194432) return false;
+    if (v === 2147483647 || v === -2147483648) return false;
+    if (Math.abs(v) > 2000000) return false;
+  }
+  return true;
+}
+
+/**
+ * IterationSpaceView — "Animated Loop Flow Stepper & Pedagogical Storyteller"
  * 
- * Teaches how loops work through narrative, focused iteration cards:
- * 1. Loop Header — type, variable, range, circular progress ring
- * 2. Current Iteration Focus Card — variable spotlight + body narration
- * 3. Inline Condition Evaluator — expression → substitution → result  
- * 4. Iteration History Timeline — scrollable chips with summaries
- * 5. Variable Watch Panel — compact grid with change tracking
+ * Benchmarked against top visualizers (VisuAlgo, Python Tutor, Brilliant):
+ * 1. Animated 4-Stage Loop Pipeline: [Init] ➔ [Condition ?] ➔ [Loop Body] ➔ [Next Step]
+ * 2. Visual glowing active stage token that travels with execution
+ * 3. Human-friendly iteration narrative & verdict (NO compiler math substitution dumps)
+ * 4. Zero stack garbage display: uninitialized numbers (32767, -134542720) are filtered out
+ * 5. Intelligent detection of test cases (while(t > 0)) vs for-loop arrays
+ * 6. Live step output (printf) & variable delta highlights
  */
 export default function IterationSpaceView({
   event,
@@ -20,14 +41,13 @@ export default function IterationSpaceView({
   const variables = event?.variables || {};
   const timelineChipsRef = useRef(null);
 
-  // ── Analyze loop structure from entire timeline ──
+  // ── Analyze loop structure from timeline ──
   const loopAnalysis = useMemo(() => {
     if (!timeline || timeline.length === 0) return null;
 
     const loopVarsOrdered = [];
     const varValueSets = {};
 
-    // Scan steps for loop variables
     for (const step of timeline) {
       if (step.loopState?.currentLoop?.variable) {
         const v = step.loopState.currentLoop.variable;
@@ -42,7 +62,7 @@ export default function IterationSpaceView({
       }
       if (step.variables) {
         for (const [k, val] of Object.entries(step.variables)) {
-          if (typeof val === 'number') {
+          if (typeof val === 'number' && isCleanValue(val)) {
             if (!varValueSets[k]) varValueSets[k] = new Set();
             varValueSets[k].add(val);
           }
@@ -50,8 +70,8 @@ export default function IterationSpaceView({
       }
     }
 
-    // Fallback: typical loop var names that change
-    const candidateVars = ['i', 'j', 'k', 'r', 'c', 'row', 'col', 'x', 'y', 'idx', 'step', 'count'];
+    // Typical loop index names that change
+    const candidateVars = ['i', 'j', 'k', 'r', 'c', 't', 'idx', 'step', 'count'];
     for (const v of candidateVars) {
       if (varValueSets[v] && varValueSets[v].size > 1 && !loopVarsOrdered.includes(v)) {
         loopVarsOrdered.push(v);
@@ -64,27 +84,10 @@ export default function IterationSpaceView({
         .map(([k]) => k);
       if (changingVars.length >= 1) {
         loopVarsOrdered.push(...changingVars.slice(0, 2));
-      } else {
-        return null;
       }
     }
 
-    // Identify bound variables (n, m, size, etc.)
-    const boundVars = [];
-    const knownBoundNames = ['n', 'm', 'limit', 'size', 'len', 'total', 'cols', 'rows', 'width', 'height'];
-    for (const b of knownBoundNames) {
-      if (!loopVarsOrdered.includes(b)) {
-        // Look for this bound across all steps
-        for (const step of timeline) {
-          if (step.variables && step.variables[b] !== undefined) {
-            boundVars.push({ name: b, value: step.variables[b] });
-            break;
-          }
-        }
-      }
-    }
-
-    // Build iteration history from timeline
+    // Build clean iterations list
     const iterations = [];
     let currentIteration = null;
 
@@ -93,11 +96,12 @@ export default function IterationSpaceView({
       const isLoopEvent = step.eventType === 'LOOP_STARTED' || step.eventType === 'LOOP_ITERATION';
 
       if (isLoopEvent) {
-        // Start a new iteration
         if (currentIteration) {
           iterations.push(currentIteration);
         }
-        const loopVar = step.loopState?.currentLoop?.variable || loopVarsOrdered[0];
+        const loopVar = step.loopState?.currentLoop?.variable || loopVarsOrdered[0] || 'loop';
+        const rawVarVal = step.variables?.[loopVar];
+        const loopVarValue = isCleanValue(rawVarVal) ? rawVarVal : null;
         const iterNum = step.loopState?.currentLoop?.iteration ?? iterations.length;
 
         currentIteration = {
@@ -105,21 +109,13 @@ export default function IterationSpaceView({
           endStep: s,
           iterationNum: iterNum,
           loopVar,
-          loopVarValue: step.variables?.[loopVar],
-          nestedVars: {},
+          loopVarValue,
           bodySteps: [],
           variableChanges: [],
           condition: step.loopState?.currentLoop?.condition || '',
           loopType: step.loopState?.currentLoop?.type || 'for',
           isStart: step.eventType === 'LOOP_STARTED'
         };
-
-        // Capture nested loop vars
-        for (const v of loopVarsOrdered) {
-          if (step.variables?.[v] !== undefined) {
-            currentIteration.nestedVars[v] = step.variables[v];
-          }
-        }
       } else if (currentIteration) {
         currentIteration.endStep = s;
         currentIteration.bodySteps.push({
@@ -128,25 +124,11 @@ export default function IterationSpaceView({
           eventType: step.eventType,
           stepOutput: step.stepOutput,
           changes: step.changes || [],
-          arrayChanges: step.arrayChanges || [],
-          conditionResult: step.conditionResult,
-          why: step.why,
-          variables: { ...step.variables }
+          why: step.why
         });
 
-        // Track what changed
         if (step.changes && step.changes.length > 0) {
           currentIteration.variableChanges.push(...step.changes);
-        }
-        if (step.arrayChanges && step.arrayChanges.length > 0) {
-          currentIteration.variableChanges.push(
-            ...step.arrayChanges.map(ac => ({
-              name: ac.row !== undefined ? `${ac.array}[${ac.row}][${ac.col}]` : `${ac.array}[${ac.index}]`,
-              from: ac.from,
-              to: ac.to,
-              isArray: true
-            }))
-          );
         }
       }
     }
@@ -154,49 +136,44 @@ export default function IterationSpaceView({
       iterations.push(currentIteration);
     }
 
-    // Determine ranges for loop vars
+    // Variable ranges (excluding garbage numbers)
     const varRanges = {};
     for (const v of loopVarsOrdered) {
-      const vals = varValueSets[v] ? Array.from(varValueSets[v]).sort((a, b) => a - b) : [];
-      varRanges[v] = { min: vals[0] ?? 0, max: vals[vals.length - 1] ?? 0, values: vals };
+      const vals = varValueSets[v] ? Array.from(varValueSets[v]).filter(isCleanValue).sort((a, b) => a - b) : [];
+      if (vals.length > 0) {
+        varRanges[v] = { min: vals[0], max: vals[vals.length - 1], values: vals };
+      }
     }
 
     return {
       loopVars: loopVarsOrdered,
       isNested: loopVarsOrdered.length >= 2,
-      boundVars,
       iterations,
       varRanges,
       totalIterations: iterations.length
     };
   }, [timeline]);
 
-  // ── Find which iteration we're currently in ──
+  // Current iteration data
   const currentIterationData = useMemo(() => {
-    if (!loopAnalysis) return null;
+    if (!loopAnalysis || loopAnalysis.iterations.length === 0) return null;
     const { iterations } = loopAnalysis;
 
-    // Find the iteration whose step range contains currentStep
     for (let i = iterations.length - 1; i >= 0; i--) {
       if (currentStep >= iterations[i].startStep && currentStep <= iterations[i].endStep) {
         return { ...iterations[i], index: i };
       }
     }
-    // If currentStep is past all iterations, return the last one
     if (iterations.length > 0 && currentStep > iterations[iterations.length - 1].endStep) {
       return { ...iterations[iterations.length - 1], index: iterations.length - 1 };
     }
-    // If before first iteration, return the first
-    if (iterations.length > 0) {
-      return { ...iterations[0], index: 0 };
-    }
-    return null;
+    return { ...iterations[0], index: 0 };
   }, [loopAnalysis, currentStep]);
 
-  // Auto-scroll timeline chips to keep current visible
+  // Auto-scroll timeline chips
   useEffect(() => {
     if (timelineChipsRef.current && currentIterationData) {
-      const chip = timelineChipsRef.current.querySelector(`.iter-chip[data-index="${currentIterationData.index}"]`);
+      const chip = timelineChipsRef.current.querySelector(`.flow-iter-chip[data-index="${currentIterationData.index}"]`);
       if (chip) {
         chip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
       }
@@ -207,263 +184,290 @@ export default function IterationSpaceView({
     return null;
   }
 
-  const { loopVars, isNested, boundVars, iterations, varRanges, totalIterations } = loopAnalysis;
+  const { loopVars, isNested, iterations, varRanges, totalIterations } = loopAnalysis;
   const curIter = currentIterationData;
   const currentIndex = curIter?.index ?? 0;
-  const progressPercent = totalIterations > 0
-    ? Math.min(100, Math.round(((currentIndex + 1) / totalIterations) * 100))
-    : 0;
 
-  // Get current event's loop state for condition evaluation
+  // Clean condition expression
   const currentLoopState = event?.loopState?.currentLoop;
-  let conditionExpr = currentLoopState?.condition || curIter?.condition || '';
-
-  // Extract pure boolean condition from for/while headers (e.g. "int i = 0; i < n; i++" -> "i < n")
-  if (conditionExpr.includes(';')) {
-    const parts = conditionExpr.replace(/^for\s*\(?/, '').replace(/\)?\s*\{?$/, '').split(';');
+  let rawCond = currentLoopState?.condition || curIter?.condition || '';
+  if (rawCond.includes(';')) {
+    const parts = rawCond.replace(/^for\s*\(?/, '').replace(/\)?\s*\{?$/, '').split(';');
     if (parts.length >= 2 && parts[1].trim()) {
-      conditionExpr = parts[1].trim();
+      rawCond = parts[1].trim();
     }
-  } else if (/^(?:while|if)\s*\((.*)\)/.test(conditionExpr)) {
-    const match = conditionExpr.match(/^(?:while|if)\s*\((.*)\)/);
-    if (match?.[1]?.trim()) {
-      conditionExpr = match[1].trim();
-    }
+  } else if (/^(?:while|if)\s*\((.*)\)/.test(rawCond)) {
+    const m = rawCond.match(/^(?:while|if)\s*\((.*)\)/);
+    if (m?.[1]?.trim()) rawCond = m[1].trim();
   }
 
-  // Build condition substitution
-  let condSubstitution = null;
-  let condResult = null;
-  if (conditionExpr) {
-    condSubstitution = conditionExpr;
-    // Replace known variables with their current values
+  // Detect loop variable & role
+  const mainLoopVar = loopVars[0] || currentLoopState?.variable || 'i';
+  const rawVarVal = variables[mainLoopVar];
+  const mainVarVal = isCleanValue(rawVarVal) ? rawVarVal : null;
+  const isTestCaseLoop = /^(?:t|test|cases|q)$/i.test(mainLoopVar) || /while\s*\(\s*(?:t\b|test|cases)/i.test(event?.sourceLine || curIter?.condition || '');
+
+  // ── Determine Current Loop Stage in the 4-Stage Pipeline ──
+  // 1. INIT: LOOP_STARTED
+  // 2. CONDITION: LOOP_ITERATION, or line is loop header (for/while), or CONDITION_CHECKED
+  // 3. STEP: Changes loop variable (e.g. i++, t--, i = i + 1)
+  // 4. BODY: Normal body statements
+  let currentStage = 'body';
+  let currentStageIdx = 2; // 0: init, 1: condition, 2: body, 3: step
+
+  const trimmedLine = (event?.sourceLine || '').trim();
+  const isLoopHeaderLine = /^(for|while)\s*\(/.test(trimmedLine);
+  const isStepChange = event?.changes?.some(c => loopVars.includes(c.name)) ||
+    new RegExp(`(?:\\b${mainLoopVar}\\s*(?:\\+\\+|--|\\+=|-=)|(?:\\+\\+|--)\\s*${mainLoopVar}\\b)`).test(trimmedLine);
+
+  if (event?.eventType === 'LOOP_STARTED') {
+    currentStage = 'init';
+    currentStageIdx = 0;
+  } else if (event?.eventType === 'LOOP_ITERATION' || isLoopHeaderLine || event?.eventType === 'CONDITION_CHECKED') {
+    currentStage = 'condition';
+    currentStageIdx = 1;
+  } else if (isStepChange) {
+    currentStage = 'step';
+    currentStageIdx = 3;
+  } else {
+    currentStage = 'body';
+    currentStageIdx = 2;
+  }
+
+  // Evaluate condition substitution safely
+  let condEvaluation = null;
+  let condVerdict = null;
+  if (rawCond) {
+    let subExpr = rawCond;
+    let hasGarbage = false;
     for (const [vName, vVal] of Object.entries(variables)) {
-      if (typeof vVal === 'number') {
-        // Use word boundary to replace variable names with values
-        const regex = new RegExp(`\\b${vName}\\b`, 'g');
-        const replaced = condSubstitution.replace(regex, String(vVal));
-        if (replaced !== condSubstitution) {
-          condSubstitution = replaced;
+      if (new RegExp(`\\b${vName}\\b`).test(subExpr)) {
+        if (!isCleanValue(vVal)) {
+          hasGarbage = true;
+          break;
         }
+        subExpr = subExpr.replace(new RegExp(`\\b${vName}\\b`, 'g'), String(vVal));
       }
     }
-    // If we made substitutions, try to evaluate
-    if (condSubstitution !== conditionExpr) {
+
+    if (!hasGarbage && subExpr !== rawCond) {
       try {
-        // Simple safe evaluation for comparison expressions
-        const sanitized = condSubstitution.replace(/[^0-9+\-*/<>=!&|() .]/g, '');
+        const sanitized = subExpr.replace(/[^0-9+\-*/<>=!&|() .]/g, '');
         if (sanitized.length > 0 && sanitized.length < 50) {
-          condResult = Function('"use strict"; return (' + sanitized + ')')();
+          condVerdict = Boolean(Function('"use strict"; return (' + sanitized + ')')());
+          condEvaluation = `${rawCond}  ➔  ${subExpr}`;
         }
       } catch {
-        condResult = null;
+        condVerdict = null;
       }
     }
   }
 
-  // Generate narration for the current body step
-  const currentBodyStep = curIter?.bodySteps?.find(bs => bs.step === currentStep);
-  const isOnLoopHeader = event?.eventType === 'LOOP_STARTED' || event?.eventType === 'LOOP_ITERATION';
-
-  // Build narration text
-  let narrationText = '';
+  // Human Explanation for Current Step
+  let narrativeText = '';
   if (event?.stepOutput) {
-    narrationText = `Output printed: "${event.stepOutput.trim()}"`;
-  } else if (currentBodyStep?.stepOutput) {
-    narrationText = `Output printed: "${currentBodyStep.stepOutput.trim()}"`;
-  } else if (isOnLoopHeader) {
-    if (event.eventType === 'LOOP_STARTED') {
-      narrationText = `Loop begins. ${loopVars[0]} starts at ${variables[loopVars[0]] ?? '?'}.`;
+    narrativeText = `Console output generated: "${event.stepOutput.trim()}"`;
+  } else if (currentStage === 'init') {
+    narrativeText = isTestCaseLoop
+      ? `Initializing test case execution with ${mainLoopVar} = ${mainVarVal ?? 1}.`
+      : `Loop initialized. ${mainLoopVar} starts at ${mainVarVal ?? 0}.`;
+  } else if (currentStage === 'condition') {
+    if (condVerdict !== null) {
+      narrativeText = condVerdict
+        ? `Condition "${rawCond}" is TRUE. Continuing into iteration ${currentIndex + 1}.`
+        : `Condition "${rawCond}" is FALSE. Loop boundary reached; exiting loop.`;
     } else {
-      narrationText = `Checking loop condition before iteration ${(currentLoopState?.iteration ?? 0) + 1}.`;
+      narrativeText = `Evaluating loop condition: ${rawCond || 'Checking bounds'}.`;
     }
-  } else if (currentBodyStep) {
-    narrationText = currentBodyStep.why || `Executing: ${currentBodyStep.sourceLine}`;
-  } else if (event?.why) {
-    narrationText = event.why;
+  } else if (currentStage === 'step') {
+    const change = event?.changes?.find(c => loopVars.includes(c.name));
+    if (change) {
+      narrativeText = `Updated loop counter ${change.name}: ${change.from} ➔ ${change.to}. Advancing to next pass.`;
+    } else {
+      narrativeText = `Updating loop variable and preparing next iteration cycle.`;
+    }
+  } else {
+    narrativeText = event?.why || `Executing: ${trimmedLine}`;
   }
 
-  // Summarize what happened in past iterations (for chips)
-  function getIterSummary(iter) {
-    const outputStep = iter.bodySteps.find(s => s.stepOutput);
-    if (outputStep) {
-      return `output: "${outputStep.stepOutput.trim()}"`;
-    }
-    if (iter.variableChanges.length > 0) {
-      const first = iter.variableChanges[0];
-      return `${first.name}: ${first.from}→${first.to}`;
-    }
-    if (iter.bodySteps.length > 0) {
-      const condStep = iter.bodySteps.find(s => s.conditionResult !== undefined && s.conditionResult !== null);
-      if (condStep) {
-        return condStep.conditionResult ? 'condition ✓' : 'condition ✗';
-      }
-    }
-    return 'no change';
-  }
+  // Clean active variables (filter out stack garbage)
+  const cleanVariables = Object.entries(variables)
+    .filter(([name, val]) => !['argc', 'argv'].includes(name) && isCleanValue(val));
 
   return (
-    <div className="loop-storyteller">
-      {/* ── 1. Loop Header Card ── */}
-      <div className="loop-story-header">
-        <div className="loop-story-title-area">
-          <div className="loop-type-badge">
-            <RotateCw size={14} className="spin-slow" />
-            <span>{currentLoopState?.type?.toUpperCase() || 'FOR'} LOOP</span>
+    <div className="flow-loop-card">
+      {/* ── Header: Title & Iteration Counter ── */}
+      <div className="flow-loop-header">
+        <div className="flow-title-group">
+          <div className="flow-loop-badge">
+            <RotateCw size={13} className="spin-slow flow-badge-icon" />
+            <span>{isTestCaseLoop ? 'TEST CASE RUNNER' : `${(currentLoopState?.type || 'for').toUpperCase()} LOOP`}</span>
           </div>
-          <div className="loop-story-title-info">
-            {isNested ? (
-              <div className="nested-loop-labels">
-                <div className="nest-level outer">
-                  <span className="nest-bracket">┌</span>
-                  <span className="nest-label">Outer:</span>
-                  <span className="nest-var">{loopVars[0]}</span>
-                  <span className="nest-range">({varRanges[loopVars[0]]?.min} → {varRanges[loopVars[0]]?.max})</span>
-                </div>
-                <div className="nest-level inner">
-                  <span className="nest-bracket">└</span>
-                  <span className="nest-label">Inner:</span>
-                  <span className="nest-var">{loopVars[1]}</span>
-                  <span className="nest-range">({varRanges[loopVars[1]]?.min} → {varRanges[loopVars[1]]?.max})</span>
-                </div>
-              </div>
-            ) : (
-              <span className="loop-story-subtitle">
-                Variable <span className="hl-var">{loopVars[0]}</span> iterates from{' '}
-                <span className="hl-val">{varRanges[loopVars[0]]?.min}</span> to{' '}
-                <span className="hl-val">{varRanges[loopVars[0]]?.max}</span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Circular Progress Ring */}
-        <div className="loop-progress-ring-wrap">
-          <svg className="loop-progress-ring" viewBox="0 0 44 44">
-            <circle className="ring-bg" cx="22" cy="22" r="18" fill="none" strokeWidth="3" />
-            <circle
-              className="ring-fill"
-              cx="22" cy="22" r="18" fill="none" strokeWidth="3"
-              strokeDasharray={`${2 * Math.PI * 18}`}
-              strokeDashoffset={`${2 * Math.PI * 18 * (1 - progressPercent / 100)}`}
-              style={{ transition: `stroke-dashoffset ${animationDuration}ms ease` }}
-            />
-          </svg>
-          <div className="ring-center-text">
-            <span className="ring-num">{currentIndex + 1}</span>
-            <span className="ring-sep">/</span>
-            <span className="ring-total">{totalIterations}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 2. Variable Spotlight ── */}
-      <div className="var-spotlight-strip">
-        {loopVars.map(v => {
-          const val = variables[v];
-          const prevVal = curIter?.bodySteps?.[0]?.variables?.[v];
-          const changed = prevVal !== undefined && prevVal !== val;
-          return (
-            <div key={v} className={`var-spotlight-card ${changed ? 'spotlight-changed' : ''}`}>
-              <span className="spotlight-name">{v}</span>
-              <span className="spotlight-eq">=</span>
-              <span className="spotlight-value">{val ?? '?'}</span>
-              {isNested && (
-                <span className="spotlight-role">
-                  {v === loopVars[0] ? 'outer' : 'inner'}
-                </span>
+          <div className="flow-iter-heading">
+            <span className="flow-iter-title">
+              {isTestCaseLoop 
+                ? `Test Case #${currentIndex + 1}` 
+                : `Iteration ${currentIndex + 1}${totalIterations > 1 ? ` of ${totalIterations}` : ''}`}
+            </span>
+            <span className="flow-iter-desc">
+              {isTestCaseLoop ? (
+                mainVarVal !== null ? `Remaining test cases: ${mainVarVal}` : 'Running test case'
+              ) : (
+                varRanges[mainLoopVar] ? (
+                  `Index ${mainLoopVar} range: ${varRanges[mainLoopVar].min} → ${varRanges[mainLoopVar].max}`
+                ) : (
+                  rawCond ? `Condition: ${rawCond}` : 'Iterative pass'
+                )
               )}
-            </div>
-          );
-        })}
-        {boundVars.map(b => (
-          <div key={b.name} className="var-spotlight-card spotlight-bound">
-            <span className="spotlight-name">{b.name}</span>
-            <span className="spotlight-eq">=</span>
-            <span className="spotlight-value">{b.value}</span>
-            <span className="spotlight-role">bound</span>
-          </div>
-        ))}
-      </div>
-
-      {/* ── 3. Condition Evaluator ── */}
-      {conditionExpr && (
-        <div className="loop-condition-evaluator">
-          <div className="cond-eval-flow">
-            <div className="cond-eval-step">
-              <span className="cond-eval-label">Condition</span>
-              <code className="cond-eval-code">{conditionExpr}</code>
-            </div>
-            {condSubstitution && condSubstitution !== conditionExpr && (
-              <>
-                <ChevronRight size={14} className="cond-eval-arrow" />
-                <div className="cond-eval-step substituted">
-                  <span className="cond-eval-label">Substituted</span>
-                  <code className="cond-eval-code">{condSubstitution}</code>
-                </div>
-              </>
-            )}
-            {condResult !== null && (
-              <>
-                <ChevronRight size={14} className="cond-eval-arrow" />
-                <div className={`cond-eval-result ${condResult ? 'result-true' : 'result-false'}`}>
-                  {condResult ? (
-                    <>
-                      <CheckCircle2 size={14} />
-                      <span>Continue Loop</span>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle size={14} />
-                      <span>Exit Loop</span>
-                    </>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── 4. Focus Card: What's Happening NOW ── */}
-      <div className="iteration-focus-card">
-        <div className="focus-card-top">
-          <div className="focus-badge">
-            <Zap size={13} />
-            <span>
-              {isOnLoopHeader
-                ? (event.eventType === 'LOOP_STARTED' ? 'Loop Initialization' : 'Condition Check')
-                : `Iteration ${(currentLoopState?.iteration ?? currentIndex) + 1} — Body`
-              }
             </span>
           </div>
+        </div>
+
+        {/* Iteration count pill */}
+        <div className="flow-counter-pill">
+          <span className="counter-curr">{currentIndex + 1}</span>
+          <span className="counter-sep">/</span>
+          <span className="counter-total">{Math.max(totalIterations, 1)}</span>
+        </div>
+      </div>
+
+      {/* ── 4-Stage Animated Loop Pipeline (Visual Flowchart) ── */}
+      <div className="flow-pipeline-track">
+        {/* Stage 1: Init */}
+        <div className={`pipeline-stage ${currentStage === 'init' ? 'stage-active' : ''} ${currentStageIdx > 0 ? 'stage-completed' : ''}`}>
+          <div className="stage-token">
+            <Play size={12} className="stage-icon" />
+          </div>
+          <div className="stage-details">
+            <span className="stage-name">1. Init</span>
+            <span className="stage-sub">
+              {mainVarVal !== null ? `${mainLoopVar} = ${mainVarVal}` : 'Start'}
+            </span>
+          </div>
+        </div>
+
+        <div className={`pipeline-connector ${currentStageIdx >= 1 ? 'conn-active' : ''}`}>
+          <ChevronRight size={14} />
+        </div>
+
+        {/* Stage 2: Condition */}
+        <div className={`pipeline-stage ${currentStage === 'condition' ? 'stage-active' : ''} ${condVerdict === false ? 'stage-exit' : (currentStageIdx > 1 ? 'stage-completed' : '')}`}>
+          <div className="stage-token">
+            {condVerdict === false ? <XCircle size={12} /> : <CheckCircle2 size={12} />}
+          </div>
+          <div className="stage-details">
+            <span className="stage-name">2. Condition</span>
+            <span className="stage-sub" title={rawCond}>
+              {rawCond ? (rawCond.length > 14 ? rawCond.slice(0, 12) + '…' : rawCond) : 'Valid?'}
+            </span>
+          </div>
+        </div>
+
+        <div className={`pipeline-connector ${currentStageIdx >= 2 ? 'conn-active' : ''}`}>
+          <ChevronRight size={14} />
+        </div>
+
+        {/* Stage 3: Body */}
+        <div className={`pipeline-stage ${currentStage === 'body' ? 'stage-active' : ''} ${currentStageIdx > 2 ? 'stage-completed' : ''}`}>
+          <div className="stage-token">
+            <Zap size={12} className="stage-icon" />
+          </div>
+          <div className="stage-details">
+            <span className="stage-name">3. Loop Body</span>
+            <span className="stage-sub">
+              {event?.line ? `Line ${event.line}` : 'Execute'}
+            </span>
+          </div>
+        </div>
+
+        <div className={`pipeline-connector ${currentStageIdx >= 3 ? 'conn-active' : ''}`}>
+          <ChevronRight size={14} />
+        </div>
+
+        {/* Stage 4: Next Step */}
+        <div className={`pipeline-stage ${currentStage === 'step' ? 'stage-active' : ''}`}>
+          <div className="stage-token">
+            <RotateCw size={12} className="stage-icon" />
+          </div>
+          <div className="stage-details">
+            <span className="stage-name">4. Next Step</span>
+            <span className="stage-sub">
+              {isTestCaseLoop ? `${mainLoopVar}--` : `${mainLoopVar}++`}
+            </span>
+          </div>
+        </div>
+
+        {/* Repeat Flow Indicator */}
+        <div className="pipeline-repeat-badge" title="Cycles back to Condition Check">
+          <RotateCw size={11} className="spin-slow" />
+          <span>Repeat</span>
+        </div>
+      </div>
+
+      {/* ── Unified Action & Narrative Card ── */}
+      <div className="flow-narrative-card">
+        <div className="narrative-top-row">
+          <div className={`stage-status-chip stage-${currentStage}`}>
+            {currentStage === 'init' && <Play size={11} />}
+            {currentStage === 'condition' && <HelpCircle size={11} />}
+            {currentStage === 'body' && <Activity size={11} />}
+            {currentStage === 'step' && <TrendingUp size={11} />}
+            <span>
+              {currentStage === 'init' && 'Loop Entry & Initialization'}
+              {currentStage === 'condition' && 'Testing Loop Condition'}
+              {currentStage === 'body' && `Iteration ${currentIndex + 1} Body`}
+              {currentStage === 'step' && 'Stepping to Next Iteration'}
+            </span>
+          </div>
+
           {event?.sourceLine && (
-            <code className="focus-source-line">
-              <span className="focus-line-num">L{event.line}</span>
-              {event.sourceLine}
-            </code>
+            <div className="flow-code-pill">
+              <span className="flow-code-line">L{event.line}</span>
+              <code className="flow-code-text">{event.sourceLine.trim()}</code>
+            </div>
           )}
         </div>
 
-        <div className="focus-narration">
-          <Activity size={15} className="narration-icon" />
-          <p className="narration-text">{narrationText}</p>
+        {/* Plain-English Action Description */}
+        <div className="narrative-body-text">
+          <p>{narrativeText}</p>
         </div>
 
-        {/* Inline variable changes for this step */}
+        {/* Interactive Condition Comparison Pill (When at condition) */}
+        {currentStage === 'condition' && rawCond && (
+          <div className="flow-cond-banner">
+            <span className="cond-banner-label">EVALUATING:</span>
+            <code className="cond-banner-code">{rawCond}</code>
+            {condEvaluation && (
+              <>
+                <ChevronRight size={12} className="cond-arrow" />
+                <code className="cond-sub-code">{condEvaluation.split('➔')[1]?.trim()}</code>
+              </>
+            )}
+            {condVerdict !== null && (
+              <span className={`cond-verdict-pill ${condVerdict ? 'pass' : 'fail'}`}>
+                {condVerdict ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                <span>{condVerdict ? 'TRUE (Continue)' : 'FALSE (Exit)'}</span>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Variable Changes in this step */}
         {event?.changes && event.changes.length > 0 && (
-          <div className="focus-changes-strip">
+          <div className="flow-changes-row">
+            <span className="changes-tag">MODIFIED:</span>
             {event.changes.map((c, idx) => {
+              if (!isCleanValue(c.from) || !isCleanValue(c.to)) return null;
               const diff = (typeof c.from === 'number' && typeof c.to === 'number') ? c.to - c.from : null;
               return (
-                <div key={idx} className="focus-change-pill">
-                  <span className="change-var-name">{c.name}</span>
-                  <span className="change-from">{c.from}</span>
-                  <span className="change-arrow">→</span>
-                  <span className="change-to">{c.to}</span>
+                <div key={idx} className="flow-change-badge">
+                  <span className="change-var">{c.name}:</span>
+                  <span className="change-old">{c.from}</span>
+                  <span className="change-arrow">➔</span>
+                  <span className="change-new">{c.to}</span>
                   {diff !== null && (
-                    <span className={`change-diff ${diff >= 0 ? 'positive' : 'negative'}`}>
-                      {diff >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    <span className={`change-delta ${diff >= 0 ? 'pos' : 'neg'}`}>
                       {diff >= 0 ? `+${diff}` : diff}
                     </span>
                   )}
@@ -473,108 +477,83 @@ export default function IterationSpaceView({
           </div>
         )}
 
-        {/* Step Output Banner: When printf or puts executes at this exact step */}
+        {/* Live stdout emitted at this exact step */}
         {event?.stepOutput && (
-          <div className="focus-output-banner">
-            <div className="focus-output-badge">
+          <div className="flow-step-output">
+            <div className="step-output-header">
               <Terminal size={12} />
-              <span>Output printed at this step:</span>
+              <span>Printed to Console at this step:</span>
             </div>
-            <pre className="focus-output-text">{event.stepOutput}</pre>
+            <pre className="step-output-text">{event.stepOutput}</pre>
+          </div>
+        )}
+
+        {/* Cumulative stdout panel if available */}
+        {event?.stdout && (
+          <div className="flow-console-snippet">
+            <div className="console-snippet-header">
+              <Terminal size={11} />
+              <span>Program Console (stdout)</span>
+            </div>
+            <pre className="console-snippet-body">{event.stdout}</pre>
           </div>
         )}
       </div>
 
-      {/* ── 4b. Live Loop Console Output (stdout up to this step) ── */}
-      {event?.stdout && (
-        <div className="loop-stdout-panel">
-          <div className="loop-stdout-header">
-            <div className="loop-stdout-title">
-              <Terminal size={13} className="stdout-icon" />
-              <span>Console Output (stdout up to Step {currentStep + 1})</span>
-            </div>
-            {event.stepOutput && (
-              <span className="stdout-just-emitted">
-                ▶ Line {event.line} just printed
-              </span>
-            )}
+      {/* ── Active Initialized Variables (Clean Glassmorphic Pills, NO Garbage) ── */}
+      {cleanVariables.length > 0 && (
+        <div className="flow-vars-footer">
+          <span className="vars-footer-label">ACTIVE STATE:</span>
+          <div className="vars-footer-list">
+            {cleanVariables.map(([name, val]) => {
+              const isChanged = event?.changes?.some(c => c.name === name);
+              const isMainLoop = loopVars.includes(name);
+              return (
+                <div 
+                  key={name} 
+                  className={`flow-var-chip ${isChanged ? 'chip-changed' : ''} ${isMainLoop ? 'chip-loop-var' : ''}`}
+                >
+                  <span className="var-chip-name">{name}</span>
+                  <span className="var-chip-eq">=</span>
+                  <span className="var-chip-val">
+                    {typeof val === 'string' ? `"${val}"` : val}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-          <pre className="loop-stdout-content">{event.stdout}</pre>
         </div>
       )}
 
-      {/* ── 5. Iteration History Timeline ── */}
+      {/* ── Iteration History Navigation Strip ── */}
       {iterations.length > 1 && (
-        <div className="iteration-timeline-section">
-          <div className="timeline-section-header">
+        <div className="flow-history-strip-wrap">
+          <div className="history-label">
             <Eye size={12} />
-            <span>Iteration History</span>
-            <span className="timeline-count">{iterations.length} iterations</span>
+            <span>Iterations ({iterations.length})</span>
           </div>
-          <div className="iteration-timeline-strip" ref={timelineChipsRef}>
+          <div className="flow-history-strip" ref={timelineChipsRef}>
             {iterations.map((iter, idx) => {
-              const isCurrent = idx === currentIndex;
+              const isCur = idx === currentIndex;
               const isPast = idx < currentIndex;
-              const isFuture = idx > currentIndex;
-              const summary = getIterSummary(iter);
-
               return (
                 <div
                   key={idx}
                   data-index={idx}
-                  className={`iter-chip ${isCurrent ? 'chip-current' : ''} ${isPast ? 'chip-past' : ''} ${isFuture ? 'chip-future' : ''}`}
-                  title={`Iteration ${iter.iterationNum + 1}: ${summary}`}
+                  className={`flow-iter-chip ${isCur ? 'chip-active' : ''} ${isPast ? 'chip-past' : ''}`}
+                  title={`Iteration ${iter.iterationNum + 1}`}
                 >
-                  <span className="chip-num">
-                    {iter.iterationNum + 1}
-                  </span>
-                  <span className="chip-var-val">
-                    {iter.loopVar}={iter.loopVarValue ?? '?'}
-                  </span>
-                  {isPast && (
-                    <span className="chip-summary">{summary}</span>
+                  <span className="iter-chip-num">#{iter.iterationNum + 1}</span>
+                  {iter.loopVarValue !== null && (
+                    <span className="iter-chip-val">{iter.loopVar}={iter.loopVarValue}</span>
                   )}
-                  {isCurrent && (
-                    <span className="chip-active-dot" />
-                  )}
+                  {isCur && <span className="iter-chip-pulse" />}
                 </div>
               );
             })}
           </div>
         </div>
       )}
-
-      {/* ── 6. Variable Watch Panel ── */}
-      <div className="var-watch-panel">
-        <div className="watch-panel-header">
-          <span className="watch-title">Variable Watch</span>
-        </div>
-        <div className="watch-grid">
-          {Object.entries(variables)
-            .filter(([name]) => !['argc', 'argv'].includes(name))
-            .map(([name, value]) => {
-              const change = event?.changes?.find(c => c.name === name);
-              const isLoopVar = loopVars.includes(name);
-              return (
-                <div
-                  key={name}
-                  className={`watch-cell ${change ? 'watch-changed' : ''} ${isLoopVar ? 'watch-loop-var' : ''}`}
-                >
-                  <span className="watch-name">{name}</span>
-                  <span className="watch-value">{typeof value === 'number' ? value : String(value)}</span>
-                  {change && (
-                    <span className="watch-delta">
-                      {typeof change.from === 'number' && typeof change.to === 'number'
-                        ? (change.to - change.from >= 0 ? `+${change.to - change.from}` : `${change.to - change.from}`)
-                        : `${change.from}→${change.to}`
-                      }
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-      </div>
     </div>
   );
 }

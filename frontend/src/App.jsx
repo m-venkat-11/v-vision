@@ -8,7 +8,9 @@ import QuestionInput from './components/QuestionInput';
 import ExplanationPanel from './components/ExplanationPanel';
 import { useTimelinePlayer } from './hooks/useTimelinePlayer';
 import { EXAMPLE_PROGRAMS } from './data/examples';
-import { Sparkles, Code2, Columns2, Rows2, RotateCcw, Cpu, BookOpen, GripVertical } from 'lucide-react';
+import { Sparkles, Code2, Columns2, Rows2, RotateCcw, Cpu, BookOpen, GripVertical, Eye, Terminal } from 'lucide-react';
+
+import ConsoleTerminal from './components/ConsoleTerminal';
 
 const RAW_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 const API_URL = RAW_API_URL.replace(/\/+$/, '').endsWith('/api')
@@ -26,6 +28,20 @@ function App() {
   const [error, setError] = useState(null);
   const [appState, setAppState] = useState('idle'); // idle | loading | visualizing
   const [layoutMode, setLayoutMode] = useState('columns'); // 'columns' | 'rows'
+
+  // Mobile viewport detection & segmented view switcher
+  const [isMobile, setIsMobile] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth <= 768 : false;
+  });
+  const [mobileActiveView, setMobileActiveView] = useState('code'); // 'code' | 'viz' | 'output'
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Resizable split panel width (in percentage)
   const [editorWidth, setEditorWidth] = useState(46);
@@ -67,6 +83,9 @@ function App() {
       if (data.timeline && data.timeline.length > 0) {
         player.setTimeline(data.timeline);
         setAppState('visualizing');
+        if (window.innerWidth <= 768) {
+          setMobileActiveView('viz');
+        }
       } else {
         setError({
           error: 'No execution steps were captured. The program may have exited immediately.',
@@ -186,82 +205,129 @@ function App() {
   return (
     <div className={`app layout-${layoutMode}`}>
       {/* Top Navigation Header */}
-      <header className="app-header">
-        <div className="header-left">
-          <div className="app-logo">
-            <div className="app-logo-icon">
-              <Cpu size={18} />
-            </div>
-            <div className="app-title-block">
-              <span className="app-logo-text">V-VISION</span>
-              <span className="app-logo-sub">Execution & Problem Reasoning</span>
-            </div>
-            <span className="app-version-badge">v2.0 Pro</span>
-          </div>
-
-          <div className="header-divider"></div>
-
-          {/* Mode Switcher Tabs */}
-          <ModeTabs activeMode={activeMode} onSelectMode={setActiveMode} />
-
-          {activeMode === 'code' && (
-            <>
-              <div className="header-divider"></div>
-              {/* Preset Selector */}
-              <div className="example-selector-wrap">
-                <BookOpen size={14} className="selector-icon" />
-                <select
-                  className="select-preset"
-                  value={selectedExampleId}
-                  onChange={handleExampleChange}
-                >
-                  {EXAMPLE_PROGRAMS.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.category}: {p.name} ({p.complexity})
-                    </option>
-                  ))}
-                </select>
+      <header className={`app-header ${isMobile ? 'mobile-header' : ''}`}>
+        {isMobile ? (
+          <div className="mobile-header-stack">
+            <div className="mobile-header-top">
+              <div className="app-logo">
+                <div className="app-logo-icon">
+                  <Cpu size={16} />
+                </div>
+                <span className="app-logo-text">V-VISION</span>
               </div>
 
-              {currentExample && (
-                <div className="example-description-pill" title={currentExample.description}>
-                  <span>{currentExample.description}</span>
-                </div>
+              <ModeTabs activeMode={activeMode} onSelectMode={setActiveMode} />
+
+              {activeMode === 'code' && (
+                <button
+                  className="icon-btn-secondary mobile-reset-btn"
+                  onClick={handleResetEditor}
+                  title="Reset code to default"
+                >
+                  <RotateCcw size={13} />
+                </button>
               )}
-            </>
-          )}
-        </div>
+            </div>
 
-        <div className="header-right">
-          {/* Layout Mode Toggle */}
-          <div className="layout-toggle-pills">
-            <button
-              className={`layout-btn ${layoutMode === 'columns' ? 'active' : ''}`}
-              onClick={() => setLayoutMode('columns')}
-              title="Side-by-side columns view"
-            >
-              <Columns2 size={14} />
-            </button>
-            <button
-              className={`layout-btn ${layoutMode === 'rows' ? 'active' : ''}`}
-              onClick={() => setLayoutMode('rows')}
-              title="Stacked rows view"
-            >
-              <Rows2 size={14} />
-            </button>
+            {activeMode === 'code' && (
+              <div className="mobile-header-sub">
+                <div className="example-selector-wrap mobile-selector">
+                  <BookOpen size={13} className="selector-icon" />
+                  <select
+                    className="select-preset mobile-preset-select"
+                    value={selectedExampleId}
+                    onChange={handleExampleChange}
+                  >
+                    {EXAMPLE_PROGRAMS.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.category}: {p.name} ({p.complexity})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
+        ) : (
+          /* Desktop Header */
+          <>
+            <div className="header-left">
+              <div className="app-logo">
+                <div className="app-logo-icon">
+                  <Cpu size={18} />
+                </div>
+                <div className="app-title-block">
+                  <span className="app-logo-text">V-VISION</span>
+                  <span className="app-logo-sub">Execution & Problem Reasoning</span>
+                </div>
+                <span className="app-version-badge">v2.0 Pro</span>
+              </div>
 
-          {activeMode === 'code' && (
-            <button
-              className="icon-btn-secondary"
-              onClick={handleResetEditor}
-              title="Reset code to default"
-            >
-              <RotateCcw size={13} />
-              <span>Reset</span>
-            </button>
-          )}
-        </div>
+              <div className="header-divider"></div>
+
+              {/* Mode Switcher Tabs */}
+              <ModeTabs activeMode={activeMode} onSelectMode={setActiveMode} />
+
+              {activeMode === 'code' && (
+                <>
+                  <div className="header-divider"></div>
+                  {/* Preset Selector */}
+                  <div className="example-selector-wrap">
+                    <BookOpen size={14} className="selector-icon" />
+                    <select
+                      className="select-preset"
+                      value={selectedExampleId}
+                      onChange={handleExampleChange}
+                    >
+                      {EXAMPLE_PROGRAMS.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.category}: {p.name} ({p.complexity})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {currentExample && (
+                    <div className="example-description-pill" title={currentExample.description}>
+                      <span>{currentExample.description}</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="header-right">
+              {/* Layout Mode Toggle */}
+              <div className="layout-toggle-pills">
+                <button
+                  className={`layout-btn ${layoutMode === 'columns' ? 'active' : ''}`}
+                  onClick={() => setLayoutMode('columns')}
+                  title="Side-by-side columns view"
+                >
+                  <Columns2 size={14} />
+                </button>
+                <button
+                  className={`layout-btn ${layoutMode === 'rows' ? 'active' : ''}`}
+                  onClick={() => setLayoutMode('rows')}
+                  title="Stacked rows view"
+                >
+                  <Rows2 size={14} />
+                </button>
+              </div>
+
+              {activeMode === 'code' && (
+                <button
+                  className="icon-btn-secondary"
+                  onClick={handleResetEditor}
+                  title="Reset code to default"
+                >
+                  <RotateCcw size={13} />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </header>
 
       {/* Question Mode Search Banner (When in problem mode) */}
@@ -274,56 +340,146 @@ function App() {
         />
       )}
 
-      {/* Main Workspace Area */}
-      <div className="app-main">
-        {/* Left Side: Code Editor (shown in Code mode or alongside Problem mode) */}
-        <div
-          className="editor-split-pane"
-          style={layoutMode === 'columns' ? { width: `${editorWidth}%` } : {}}
-        >
-          <CodeEditor
-            code={code}
-            onCodeChange={setCode}
-            customInput={customInput}
-            onCustomInputChange={setCustomInput}
-            highlightLine={appState === 'visualizing' ? currentLine : null}
-            isPlaying={player.isPlaying}
-            isLoading={isLoading}
-            onVisualize={handleVisualize}
-            breakpoints={player.breakpoints}
-            onToggleBreakpoint={player.toggleBreakpoint}
-            currentEvent={player.currentEvent}
-          />
-        </div>
-
-        {/* Resizable Divider (Columns mode only) */}
-        {layoutMode === 'columns' && (
-          <div
-            className="resizable-divider"
-            onMouseDown={handleMouseDown}
-            title="Drag to resize panels"
+      {/* Mobile Segmented View Switcher (Only visible on screens <= 768px) */}
+      {isMobile && (
+        <div className="mobile-view-tabs">
+          <button
+            type="button"
+            className={`mobile-tab-btn ${mobileActiveView === 'code' ? 'active' : ''}`}
+            onClick={() => setMobileActiveView('code')}
           >
-            <div className="divider-handle">
-              <GripVertical size={14} />
-            </div>
-          </div>
-        )}
-
-        {/* Right Side: Visualization Panel & Explanation */}
-        <div className="viz-split-pane">
-          {/* Algorithm Plain-Language Explanation & Complexity Card */}
-          <ExplanationPanel code={code} isVisible={activeMode === 'code' && !!code} />
-
-          <VisualizationPanel
-            event={player.currentEvent}
-            prevEvent={player.prevEvent}
-            animationDuration={player.animationDuration}
-            error={error}
-            timeline={player.timeline}
-            currentStep={player.currentStep}
-            onSelectStep={player.goToStep}
-          />
+            <Code2 size={14} />
+            <span>Code</span>
+          </button>
+          <button
+            type="button"
+            className={`mobile-tab-btn ${mobileActiveView === 'viz' ? 'active' : ''}`}
+            onClick={() => setMobileActiveView('viz')}
+          >
+            <Eye size={14} />
+            <span>Visualizer</span>
+            {appState === 'visualizing' && <span className="mobile-tab-pill-live">Live</span>}
+          </button>
+          <button
+            type="button"
+            className={`mobile-tab-btn ${mobileActiveView === 'output' ? 'active' : ''}`}
+            onClick={() => setMobileActiveView('output')}
+          >
+            <Terminal size={14} />
+            <span>Output</span>
+            {player.timeline.length > 0 && player.timeline[player.timeline.length - 1]?.stdout && (
+              <span className="mobile-tab-dot" />
+            )}
+          </button>
         </div>
+      )}
+
+      {/* Main Workspace Area */}
+      <div className={`app-main ${isMobile ? `mobile-active-${mobileActiveView}` : ''}`}>
+        {isMobile ? (
+          /* Mobile Full-Screen Single Active Pane */
+          <>
+            {mobileActiveView === 'code' && (
+              <div className="editor-split-pane mobile-full-pane">
+                <CodeEditor
+                  code={code}
+                  onCodeChange={setCode}
+                  customInput={customInput}
+                  onCustomInputChange={setCustomInput}
+                  highlightLine={appState === 'visualizing' ? currentLine : null}
+                  isPlaying={player.isPlaying}
+                  isLoading={isLoading}
+                  onVisualize={handleVisualize}
+                  breakpoints={player.breakpoints}
+                  onToggleBreakpoint={player.toggleBreakpoint}
+                  currentEvent={player.currentEvent}
+                />
+              </div>
+            )}
+
+            {mobileActiveView === 'viz' && (
+              <div className="viz-split-pane mobile-full-pane">
+                <ExplanationPanel code={code} isVisible={activeMode === 'code' && !!code} />
+                <VisualizationPanel
+                  event={player.currentEvent}
+                  prevEvent={player.prevEvent}
+                  animationDuration={player.animationDuration}
+                  error={error}
+                  timeline={player.timeline}
+                  currentStep={player.currentStep}
+                  onSelectStep={player.goToStep}
+                />
+              </div>
+            )}
+
+            {mobileActiveView === 'output' && (
+              <div className="mobile-output-pane mobile-full-pane">
+                <div className="mobile-output-header-card">
+                  <div className="mobile-output-title">
+                    <Terminal size={16} />
+                    <span>Program Execution Output & Terminal</span>
+                  </div>
+                  {player.timeline.length > 0 && (
+                    <span className="mobile-output-step-info">
+                      Step {player.currentStep + 1} of {player.totalSteps}
+                    </span>
+                  )}
+                </div>
+                <ConsoleTerminal
+                  timeline={player.timeline}
+                  currentStep={player.currentStep}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          /* Desktop Split Pane (Columns or Rows with Resizable Divider) */
+          <>
+            <div
+              className="editor-split-pane"
+              style={layoutMode === 'columns' ? { width: `${editorWidth}%` } : {}}
+            >
+              <CodeEditor
+                code={code}
+                onCodeChange={setCode}
+                customInput={customInput}
+                onCustomInputChange={setCustomInput}
+                highlightLine={appState === 'visualizing' ? currentLine : null}
+                isPlaying={player.isPlaying}
+                isLoading={isLoading}
+                onVisualize={handleVisualize}
+                breakpoints={player.breakpoints}
+                onToggleBreakpoint={player.toggleBreakpoint}
+                currentEvent={player.currentEvent}
+              />
+            </div>
+
+            {layoutMode === 'columns' && (
+              <div
+                className="resizable-divider"
+                onMouseDown={handleMouseDown}
+                title="Drag to resize panels"
+              >
+                <div className="divider-handle">
+                  <GripVertical size={14} />
+                </div>
+              </div>
+            )}
+
+            <div className="viz-split-pane">
+              <ExplanationPanel code={code} isVisible={activeMode === 'code' && !!code} />
+              <VisualizationPanel
+                event={player.currentEvent}
+                prevEvent={player.prevEvent}
+                animationDuration={player.animationDuration}
+                error={error}
+                timeline={player.timeline}
+                currentStep={player.currentStep}
+                onSelectStep={player.goToStep}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Bottom Transport and Narrative Caption Bar */}

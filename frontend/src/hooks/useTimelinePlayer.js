@@ -17,12 +17,12 @@ export function useTimelinePlayer() {
   const currentEvent = timeline[currentStep] || null;
   const prevEvent = currentStep > 0 ? timeline[currentStep - 1] : null;
 
-  // Base delay between steps in ms at 1x speed.
-  const baseStepDelay = 1600;
-  const stepDelay = Math.max(350, Math.round(baseStepDelay / speed));
+  // Base delay between steps in ms at 1x speed (700ms creates a smooth, real-time animation flow)
+  const baseStepDelay = 700;
+  const stepDelay = Math.max(160, Math.round(baseStepDelay / speed));
 
-  // Animation duration matches the tempo
-  const animationDuration = Math.min(600, Math.max(200, Math.round(450 / Math.sqrt(speed))));
+  // Animation duration dynamically scales to be 50-60% of stepDelay so transitions complete before the next step
+  const animationDuration = Math.min(420, Math.max(120, Math.round(stepDelay * 0.55)));
 
   const clearAutoPlay = useCallback(() => {
     if (intervalRef.current) {

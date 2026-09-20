@@ -13,7 +13,9 @@ function analyzeCodeHeuristically(code) {
   const normalized = code.toLowerCase();
 
   // Pattern detection
-  const hasNestedLoops = /(for|while)[\s\S]*?(for|while)/.test(code);
+  const hasTrueNestedLoops = /(?:for|while)\s*\([^)]*\)\s*\{[^}]*(?:for|while)\b/.test(code);
+  const hasTestCaseLoop = /while\s*\(\s*(?:t\b|test|cases|q\b)/i.test(code);
+  const hasSingleLoop = /(?:for|while)\s*\(/.test(code);
   const hasRecursion = /(\w+)\s*\([^)]*\)\s*\{[\s\S]*?\1\s*\(/.test(code);
   const hasMalloc = /malloc|calloc/.test(code);
   const hasBinarySearch = /mid\s*=|left\s*<=\s*right|low\s*<=\s*high/i.test(code);
@@ -43,7 +45,7 @@ function analyzeCodeHeuristically(code) {
     timeComplexity = 'O(log n)';
     spaceComplexity = 'O(1)';
     keyTechnique = 'Divide-and-conquer search';
-  } else if (hasSwap && hasNestedLoops) {
+  } else if (hasSwap && (hasTrueNestedLoops || hasSingleLoop)) {
     if (normalized.includes('bubble') || normalized.includes('swapped')) {
       title = 'Bubble Sort';
       summary = 'Iteratively compares and swaps adjacent out-of-order elements, allowing larger values to "bubble up" to the end of the array.';
@@ -99,12 +101,24 @@ function analyzeCodeHeuristically(code) {
     timeComplexity = 'O(n)';
     spaceComplexity = 'O(n) on heap';
     keyTechnique = 'Dynamic memory management';
-  } else if (hasNestedLoops) {
+  } else if (hasTrueNestedLoops) {
     title = 'Nested Loop Algorithm';
     summary = 'Executes multi-pass algorithmic steps with an outer loop controlling stages and inner loop processing elements.';
     timeComplexity = 'O(n²)';
     spaceComplexity = 'O(1)';
     keyTechnique = 'Nested iterative passes';
+  } else if (hasTestCaseLoop) {
+    title = 'Multi-Test Case Execution';
+    summary = 'Executes independent test cases sequentially, reading inputs and processing each case in an isolated iterative pass.';
+    timeComplexity = 'O(T × n)';
+    spaceComplexity = 'O(1)';
+    keyTechnique = 'Test-case loop control & input parsing';
+  } else if (hasSingleLoop) {
+    title = 'Iterative Algorithm';
+    summary = 'Executes a sequential loop stepping through elements or values until reaching a terminal boundary condition.';
+    timeComplexity = 'O(n)';
+    spaceComplexity = 'O(1)';
+    keyTechnique = 'Iterative loop traversal';
   }
 
   return {

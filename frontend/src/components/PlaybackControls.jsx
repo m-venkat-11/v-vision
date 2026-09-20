@@ -152,14 +152,19 @@ export default function PlaybackControls({
         {/* Right: Speed controls */}
         <div className="playback-speed-group">
           <div className="speed-pills-wrap">
-            {[0.25, 0.5, 1, 1.5, 2].map(s => (
+            {[
+              { val: 0.5, label: '0.5×' },
+              { val: 1,   label: '1×' },
+              { val: 2,   label: '2×' },
+              { val: 3,   label: '⚡ Real-Time' },
+            ].map(({ val, label }) => (
               <button
-                key={s}
-                className={`speed-pill ${speed === s ? 'active' : ''}`}
-                onClick={() => onSetSpeed(s)}
-                title={`Set speed to ${s}x`}
+                key={val}
+                className={`speed-pill ${speed === val ? 'active' : ''}`}
+                onClick={() => onSetSpeed(val)}
+                title={`Set speed to ${label} (${Math.round(700 / val)}ms per step)`}
               >
-                {s}×
+                {label}
               </button>
             ))}
           </div>
