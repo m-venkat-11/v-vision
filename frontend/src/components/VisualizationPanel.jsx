@@ -65,16 +65,24 @@ export default function VisualizationPanel({
             <div className="viz-empty-icon-halo">
               <Sparkles size={32} className="spin-slow" />
             </div>
-            <h3 className="viz-empty-title">Ready for Live Execution</h3>
+            <h3 className="viz-empty-title" style={{
+              background: 'linear-gradient(90deg, #fff, #4fc3ff, #b388ff)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>Ready for Live Execution</h3>
             <p className="viz-empty-subtitle">
-              Select an algorithm from the presets or write your own C code, then click <strong>Visualize</strong> (or press <kbd>Ctrl+Enter</kbd>) to watch your program execute line-by-line.
+              Select an algorithm from the presets or write your own C code, then click <strong style={{color: '#4fc3ff'}}>Visualize</strong> (or press <kbd>Ctrl+Enter</kbd>) to watch your program execute line-by-line with stunning glassmorphism animations.
             </p>
             <div className="viz-feature-pills">
-              <span className="pill">✨ 1D & 2D Arrays</span>
+              <span className="pill">✨ Arrays & Sorting</span>
+              <span className="pill">🌳 Trees & BST</span>
+              <span className="pill">🔗 Graphs & BFS/DFS</span>
               <span className="pill">🎯 Pointers & Links</span>
-              <span className="pill">📦 Struct Fields</span>
-              <span className="pill">🔄 Recursion Tree</span>
-              <span className="pill">💾 Heap malloc / free</span>
+              <span className="pill">📦 Hash Tables</span>
+              <span className="pill">🔄 Recursion & DP</span>
+              <span className="pill">💾 Heap Memory</span>
+              <span className="pill">🔢 Bitwise Ops</span>
               <span className="pill">📊 Live Charts</span>
             </div>
           </div>

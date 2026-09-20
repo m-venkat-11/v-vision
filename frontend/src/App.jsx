@@ -204,6 +204,11 @@ function App() {
 
   return (
     <div className={`app layout-${layoutMode}`}>
+      {/* Glassmorphism Animated Background Blobs */}
+      <div className="bg-blob bg-blob-1" />
+      <div className="bg-blob bg-blob-2" />
+      <div className="bg-blob bg-blob-3" />
+
       {/* Top Navigation Header */}
       <header className={`app-header ${isMobile ? 'mobile-header' : ''}`}>
         {isMobile ? (
