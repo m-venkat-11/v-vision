@@ -85,6 +85,23 @@ function Array1D({
 }) {
   const isCharArray = values.length > 0 && typeof values[0] === 'string' && values[0].length === 1;
 
+  // Semantic caption matching reference files
+  const activeChange = changes?.find(c => c.array === name);
+  const activeHl = highlightedIndices.length > 0 ? highlightedIndices[0] : null;
+  let captionText = null;
+  let captionDot = 'blue';
+
+  if (isComparingPair && highlightedIndices.length >= 2) {
+    captionDot = 'amber';
+    captionText = `Comparing <b>${name}[${highlightedIndices[0]}]</b> (${values[highlightedIndices[0]]}) and <b>${name}[${highlightedIndices[1]}]</b> (${values[highlightedIndices[1]]})`;
+  } else if (activeChange) {
+    captionDot = 'purple';
+    captionText = `Array element <b>${name}[${activeChange.index}]</b> updated: ${activeChange.from} → ${activeChange.to}`;
+  } else if (activeHl !== null && values[activeHl] !== undefined) {
+    captionDot = 'amber';
+    captionText = `Accessing <b>${name}[${activeHl}]</b> = ${values[activeHl]}`;
+  }
+
   return (
     <div className="array-card">
       <div className="array-card-header">
@@ -188,6 +205,14 @@ function Array1D({
           })}
         </div>
       </div>
+
+      {/* Caption bar matching reference glass style */}
+      {captionText && (
+        <div className="rv-caption" style={{ marginTop: 12 }}>
+          <span className={`rv-caption-dot dot-${captionDot}`} />
+          <span dangerouslySetInnerHTML={{ __html: captionText }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -220,13 +245,8 @@ function CellBox({
       style={{ position: 'relative' }}
     >
       <motion.div
+        key={`cell-${idx}-${val}-${isChanged ? 'chg' : 'norm'}-${isHighlighted ? 'hl' : ''}`}
         className={boxClass}
-        style={isHighlighted || isChanged ? {
-          background: cellColor.bg,
-          borderColor: cellColor.border,
-          color: cellColor.text,
-          boxShadow: `0 0 12px ${cellColor.bg}`,
-        } : {}}
         animate={{
           scale: isChanged ? 1.08 : isHighlighted ? 1.04 : 1,
         }}
@@ -236,7 +256,7 @@ function CellBox({
           {val}
         </span>
 
-        {/* Change delta pill */}
+        {/* Change delta pill with purple bounceIn */}
         {isChanged && change && (
           <motion.div
             className="cell-diff-pill"

@@ -8,6 +8,8 @@ import StructView from './StructView';
 import StackDiagramView from './StackDiagramView';
 import HeapView from './HeapView';
 import LoopConditionStrip from './LoopConditionStrip';
+import LoopView from './LoopView';
+import ConditionView from './ConditionView';
 import IterationSpaceView from './IterationSpaceView';
 import StackVisualizer from './StackVisualizer';
 import QueueVisualizer from './QueueVisualizer';
@@ -325,7 +327,13 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 2. Loop Storyteller — Shows for ALL programs with loops (teaches what the loop does) */}
+      {/* Condition Evaluation (Reference 1 Section 2: Amber scanpulse → green/red resolve → branch taken) */}
+      <ConditionView event={event} />
+
+      {/* 2. Loop Trail Recedes in 3D (Reference 1 Section 3) */}
+      <LoopView event={event} />
+
+      {/* 2b. Loop Storyteller — Shows for ALL programs with loops (teaches what the loop does) */}
       {hasLoops && (
         <IterationSpaceView
           event={event}
@@ -334,7 +342,6 @@ export default function VisualizationCanvas({
           animationDuration={animationDuration}
         />
       )}
-
 
       {/* Persistent Loop & Condition Status Strip — Smooth single-line indicator */}
       <LoopConditionStrip event={event} />

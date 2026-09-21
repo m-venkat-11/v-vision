@@ -1,171 +1,129 @@
-import { useMemo } from 'react';
-import { motion } from 'motion/react';
-import { Table, Sparkles, Activity } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { Table } from 'lucide-react';
 
 /**
- * DPVisualizer
- * 
- * Visualizes Dynamic Programming (DP) state tables and recurrence relations.
- * Inspired by Claude Glass DP & VisuAlgo.
- * Features:
- * - Table cells bounce-fill elastically with new values
- * - Flowing animated dashed SVG dependency curves from subproblems (e.g. dp[i-1] + dp[i-2])
- * - Synchronized recurrence equation and step explanations
+ * DPVisualizer — Ground-up rewrite based on Reference 2, Section 1
+ *
+ * Exact patterns from reference:
+ *   .dpcell:        60×60px, 14px radius, absolute positioned, transition all .5s cubic-bezier(.22,1,.36,1)
+ *   .dpcell.filled: green glow ring (computed subproblems)
+ *   .dpcell.active: blue glow ring + @keyframes bounceFill (scale .5 → 1.12 → 1.0, 0.5s)
+ *   .depline:       amber dashed SVG line stroke=#ffb74d, stroke-dasharray:4 4
+ *                   @keyframes flowDep { to { stroke-dashoffset: -16 } }  (flowing dashes)
+ *   Index label:    absolute bottom:-20px, 10px font, color #64748b
+ *   CW constant:    68px cell width for absolute positioning
+ *
+ * Dependency arrows are <line> elements NOT <path> — straight horizontal lines
+ * at y=60 from dep cell center to active cell center.
  */
-export default function DPVisualizer({
-  dpData,
-  event,
-  variables = {},
-  arrays = {},
-  animationDuration = 0.5
-}) {
-  const { cells, activeIndex, dependencies, formula, caption, title } = useMemo(() => {
-    // 1. Direct custom dpData provided
+export default function DPVisualizer({ dpData, event, variables = {}, arrays = {} }) {
+  const { cells, activeIndex, deps, formula, caption, title } = useMemo(() => {
     if (dpData) {
       return {
-        cells: dpData.cells || [],
+        cells:       dpData.cells       || [],
         activeIndex: dpData.activeIndex ?? -1,
-        dependencies: dpData.dependencies || [],
-        formula: dpData.formula || 'dp[i] = dp[i-1] + dp[i-2]',
-        caption: dpData.caption || '',
-        title: dpData.title || 'Dynamic Programming Table'
+        deps:        dpData.dependencies || [],
+        formula:     dpData.formula     || 'dp[i] = dp[i-1] + dp[i-2]',
+        caption:     dpData.caption     || '',
+        title:       dpData.title       || 'Dynamic Programming'
       };
     }
 
-    // 2. Extract from arrays (e.g. dp, fib, memo) and variables (e.g. i, n)
-    let dpArray = null;
-    let arrayName = 'dp';
-    for (const [name, arr] of Object.entries(arrays || {})) {
-      if (/dp|fib|memo|table|ways|cost/i.test(name) && Array.isArray(arr)) {
-        dpArray = arr;
-        arrayName = name;
-        break;
+    // Extract dp array from execution trace
+    let dpArr = null, arrName = 'dp';
+    for (const [k, v] of Object.entries(arrays || {})) {
+      if (/dp|fib|memo|table|ways|cost/i.test(k) && Array.isArray(v)) {
+        dpArr = v; arrName = k; break;
       }
     }
 
-    const currentI = typeof variables?.i === 'number' ? variables.i :
-      typeof variables?.n === 'number' ? Math.min(variables.n, 6) : 3;
+    const curI = typeof variables?.i === 'number' ? variables.i
+               : typeof variables?.n === 'number' ? Math.min(variables.n, 7) : 3;
 
-    // Build canonical or real cell array
-    const cellList = [];
-    const maxLen = dpArray ? Math.min(dpArray.length, 8) : 7;
+    // Fibonacci fallback values
+    const fibFallback = [0, 1, 1, 2, 3, 5, 8, 13];
+    const N = dpArr ? Math.min(dpArr.length, 8) : 8;
+    const cellList = Array.from({ length: N }, (_, k) => {
+      const val      = dpArr ? dpArr[k] : (k <= curI ? fibFallback[k] : undefined);
+      const isFilled = val !== undefined && val !== null;
+      return { index: k, value: isFilled ? val : '', isFilled: isFilled && k < curI };
+    });
 
-    for (let k = 0; k < maxLen; k++) {
-      let val = '';
-      let isFilled = false;
-
-      if (dpArray && dpArray[k] !== undefined && dpArray[k] !== 0) {
-        val = dpArray[k];
-        isFilled = true;
-      } else if (!dpArray) {
-        // Fallback Fibonacci simulation
-        const fib = [0, 1, 1, 2, 3, 5, 8];
-        if (k <= currentI) {
-          val = fib[k];
-          isFilled = true;
-        }
-      }
-
-      cellList.push({
-        index: k,
-        value: val,
-        isFilled: isFilled || k < currentI
-      });
-    }
-
-    const deps = currentI >= 2 ? [currentI - 1, currentI - 2] : [];
+    const depIdxs = curI >= 2 ? [curI - 1, curI - 2] : [];
+    const depVals = depIdxs.map(d => (dpArr ? dpArr[d] : fibFallback[d]) ?? '?');
+    const activeVal = dpArr ? dpArr[curI] : fibFallback[curI];
 
     return {
-      cells: cellList,
-      activeIndex: currentI,
-      dependencies: deps,
-      formula: `${arrayName}[${currentI}] = ${arrayName}[${currentI - 1}] + ${arrayName}[${currentI - 2}]`,
-      caption: currentI >= 2 ?
-        `Subproblem dependency: cell ${currentI} derives from ${currentI - 1} and ${currentI - 2}.` :
-        `Base case initialization for ${arrayName}[${currentI}].`,
-      title: `Dynamic Programming (${arrayName})`
+      cells:       cellList,
+      activeIndex: curI,
+      deps:        depIdxs,
+      formula:     curI >= 2
+        ? `${arrName}[${curI}] = ${arrName}[${curI-1}](${depVals[0]}) + ${arrName}[${curI-2}](${depVals[1]}) = ${activeVal}`
+        : `Base case: ${arrName}[${curI}] = ${activeVal}`,
+      caption: curI >= 2
+        ? `<b>dp[${curI}]</b> computed from dp[${curI-1}] and dp[${curI-2}].`
+        : `Base case: <b>${arrName}[${curI}] = ${activeVal}</b>.`,
+      title: `DP — ${arrName}`
     };
   }, [dpData, arrays, variables, event]);
 
-  const CELL_WIDTH = 58;
+  // Reference uses CW=68 for absolute positioning
+  const CW = 68;
+  const svgH = 80;
 
   return (
-    <div className="glass-visualizer-card dp-glass-card">
-      <div className="glass-card-header">
-        <div className="header-badge">
-          <Table size={13} className="text-green" />
-          <span>{title}</span>
-        </div>
-        <div className="dp-formula-pill">
-          <Activity size={11} className="formula-icon" />
-          <span>{formula}</span>
-        </div>
+    <div className="rv-dp-card">
+      {/* Header */}
+      <div className="rv-card-header">
+        <Table size={13} className="rv-icon-green" />
+        <span className="rv-card-title">{title}</span>
+        <code className="rv-formula-pill">{formula}</code>
       </div>
 
-      <div className="dp-table-stage">
-        {/* SVG Dependency Flow Lines */}
-        <svg className="dp-dependency-svg" width="100%" height="90" viewBox="0 0 460 90">
-          <defs>
-            <filter id="depGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="2" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
-
-          {dependencies.map((depIdx, dId) => {
-            const xFrom = depIdx * CELL_WIDTH + 34;
-            const xTo = activeIndex * CELL_WIDTH + 34;
-            // Draw a quadratic curve above the cells
-            const pathD = `M ${xFrom} 55 Q ${(xFrom + xTo) / 2} 15 ${xTo} 55`;
-
-            return (
-              <path
-                key={`dep-line-${dId}`}
-                d={pathD}
-                fill="none"
-                stroke="var(--glow-amber, #ffb74d)"
-                strokeWidth="2.5"
-                strokeDasharray="4 4"
-                filter="url(#depGlow)"
-                className="animated-dep-line"
-              />
-            );
-          })}
+      {/* Stage: SVG dep lines + absolute cells */}
+      <div className="rv-dp-stage" style={{ height: svgH + 32, position: 'relative', marginTop: 8 }}>
+        {/* SVG dependency flow lines — exactly as reference */}
+        <svg
+          className="rv-dep-svg"
+          style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', width: '100%', height: svgH }}
+        >
+          {deps.map((d, di) => (
+            <line
+              key={di}
+              className="rv-depline"
+              x1={d * CW + 30}           y1={svgH - 22}
+              x2={activeIndex * CW + 30}  y2={svgH - 22}
+            />
+          ))}
         </svg>
 
-        {/* DP Cells Row */}
-        <div className="dp-cells-row">
-          {cells.map(c => {
-            const isActive = c.index === activeIndex;
-            const isDep = dependencies.includes(c.index);
+        {/* Cells — absolutely positioned exactly as reference */}
+        {cells.map(c => {
+          const isActive = c.index === activeIndex;
+          const isDep    = deps.includes(c.index);
+          let cls = 'rv-dpcell';
+          if (isActive)    cls += ' rv-dpcell-active';
+          else if (isDep)  cls += ' rv-dpcell-dep';
+          else if (c.isFilled) cls += ' rv-dpcell-filled';
 
-            let cellClass = 'dp-glass-cell';
-            if (isActive) cellClass += ' active-dp-cell';
-            else if (isDep) cellClass += ' dep-source-cell';
-            else if (c.isFilled) cellClass += ' filled-dp-cell';
-
-            return (
-              <div key={`dp-cell-${c.index}`} className="dp-cell-container">
-                <motion.div
-                  className={cellClass}
-                  initial={isActive ? { scale: 0.6 } : false}
-                  animate={{ scale: isActive ? 1.12 : 1 }}
-                  transition={{ duration: animationDuration, type: 'spring' }}
-                >
-                  <span className="dp-cell-value">{c.value !== '' ? c.value : '·'}</span>
-                </motion.div>
-                <span className="dp-cell-index">[{c.index}]</span>
-              </div>
-            );
-          })}
-        </div>
+          return (
+            <div
+              key={c.index}
+              className={cls}
+              style={{ left: c.index * CW, top: 0, position: 'absolute' }}
+            >
+              <span className="rv-dp-val">{c.value !== '' ? c.value : '·'}</span>
+              <span className="rv-dp-idx">dp[{c.index}]</span>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Synchronized Caption */}
+      {/* Caption */}
       {caption && (
-        <div className="glass-caption-bar">
-          <span className="caption-dot green-dot" />
-          <span className="caption-text">{caption}</span>
+        <div className="rv-caption" style={{ marginTop: 28 }}>
+          <span className="rv-caption-dot dot-green" />
+          <span dangerouslySetInnerHTML={{ __html: caption }} />
         </div>
       )}
     </div>
