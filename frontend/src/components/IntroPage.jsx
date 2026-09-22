@@ -152,7 +152,7 @@ export default function IntroPage({ onEnter }) {
             and recursion trees unfold dynamically with true hardware memory fidelity.
           </p>
 
-          {/* Center Call to Action Buttons */}
+          {/* Center Call to Action Button (Single Clean CTA) */}
           <div className="intro-cta-row">
             <button
               id="intro-enter-btn"
@@ -160,15 +160,7 @@ export default function IntroPage({ onEnter }) {
               onClick={handleLaunch}
             >
               <span>{isEntering ? 'Launching...' : 'Enter V-Vision'}</span>
-              <ArrowRight size={16} className="btn-arrow" />
-            </button>
-
-            <button
-              className="intro-btn-secondary"
-              onClick={handleLaunch}
-            >
-              <Terminal size={15} />
-              <span>Explore Engine</span>
+              <ArrowRight size={17} className="btn-arrow" />
             </button>
           </div>
 
