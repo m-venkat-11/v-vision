@@ -116,9 +116,9 @@ export default function IntroPage({ onEnter }) {
         {/* ── CENTER FOCAL HERO BLOCK ────────────────────────── */}
         <motion.div
           className="intro-center-hero"
-          initial={{ opacity: 0, y: 30, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
         >
           {/* Tech badge */}
           <div className="intro-hero-badge">
