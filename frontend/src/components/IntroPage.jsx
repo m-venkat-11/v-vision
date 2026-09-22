@@ -53,7 +53,7 @@ export default function IntroPage({ onEnter }) {
       exit={{ opacity: 0, scale: 1.15, filter: 'blur(10px)' }}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
     >
-      {/* Top Header Navbar */}
+      {/* Top Header Navbar — Transparent & Minimal for Unobstructed 3D Ceiling View */}
       <header className="intro-navbar">
         <div className="intro-nav-left">
           <div className="intro-logo">
@@ -63,20 +63,6 @@ export default function IntroPage({ onEnter }) {
             <span className="intro-logo-text">V-VISION</span>
             <span className="intro-logo-badge">v2.0 PRO</span>
           </div>
-        </div>
-
-        <nav className="intro-nav-links">
-          <span className="intro-nav-link">Live Execution</span>
-          <span className="intro-nav-link">Data Structures</span>
-          <span className="intro-nav-link">Recursion Trees</span>
-          <span className="intro-nav-link">Memory & Pointers</span>
-        </nav>
-
-        <div className="intro-nav-right">
-          <button className="intro-nav-btn" onClick={handleLaunch}>
-            <span>Enter App</span>
-            <ArrowRight size={13} />
-          </button>
         </div>
       </header>
 

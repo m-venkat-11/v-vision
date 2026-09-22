@@ -9085,7 +9085,7 @@ body {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='42' viewBox='0 0 34 42'%3E%3Cfilter id='glow-hover'%3E%3CfeDropShadow dx='0' dy='0' stdDeviation='2.8' flood-color='%23a78bfa' flood-opacity='1'/%3E%3C/filter%3E%3Ctext x='6' y='32' font-family='Consolas, Menlo, Monaco, monospace' font-size='38' font-weight='900' fill='%23ffffff' filter='url(%23glow-hover)'%3E;%3C/text%3E%3C/svg%3E") 8 14, pointer !important;
 }
 
-/* Top Navbar */
+/* Top Navbar (Completely transparent to give 100% clear view of top 3D ceiling) */
 .intro-navbar {
   position: absolute;
   top: 0;
@@ -9097,8 +9097,11 @@ body {
   justify-content: space-between;
   padding: 0 36px;
   z-index: 100;
-  backdrop-filter: blur(12px);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 .intro-nav-left {
@@ -9243,68 +9246,92 @@ body {
     0 0 70px rgba(110, 105, 248, 0.25);
 }
 
-/* Top Ceiling Wall: Arched & Angled down */
+/* Top Ceiling Wall: Arched & Angled down - Centered & Elevated so V - VISION is 100% visible */
 .wall-top {
-  top: 10px;
-  left: 0;
-  right: 0;
-  height: 220px;
-  transform-origin: 50% 0%;
-  transform: perspective(700px) rotateX(-48deg) translateZ(-30px);
+  position: absolute;
+  top: 38px;
+  left: 50%;
+  transform: translateX(-50%) rotateX(-35deg);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  width: auto;
+  white-space: nowrap;
 }
 
 .typo-top {
-  font-size: clamp(75px, 14vw, 195px);
-  letter-spacing: 0.08em;
+  font-size: clamp(38px, 6vw, 76px);
+  letter-spacing: 0.12em;
   white-space: nowrap;
-  background: linear-gradient(180deg, #a39eff 0%, #6e69f8 65%, rgba(110, 105, 248, 0.7) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 40px rgba(110, 105, 248, 0.4));
+  text-align: center;
+  color: #a39eff;
+  text-shadow: 
+    0 0 22px rgba(163, 158, 255, 0.8),
+    0 0 50px rgba(110, 105, 248, 0.5);
 }
 
 .typo-word-stretch {
   display: inline-block;
-  transform: scaleY(1.45);
+  transform: scaleY(1.3);
 }
 
-/* Left Perspective Wall: Angled inward from the left */
+/* Left Perspective Wall: Height bounded (top 140px, bottom 130px) so it NEVER overlaps ceiling or floor */
 .wall-left {
-  top: 0;
-  bottom: 0;
-  left: -20px;
-  width: 42%;
+  position: absolute;
+  top: 140px;
+  bottom: 130px;
+  left: 0;
+  width: 27%;
+  z-index: 10;
   transform-origin: 0% 50%;
-  transform: perspective(650px) rotateY(52deg) translateZ(-20px);
+  transform: rotateY(52deg);
+  display: flex;
+  align-items: center;
   justify-content: flex-start;
-  padding-left: 20px;
+  padding-left: 24px;
+  pointer-events: none;
 }
 
 .typo-left {
-  font-size: clamp(62px, 12vw, 145px);
+  font-size: clamp(48px, 8.5vw, 110px);
+  color: #6e69f8;
+  text-shadow: 
+    0 0 25px rgba(110, 105, 248, 0.6),
+    0 0 60px rgba(110, 105, 248, 0.3);
   display: flex;
   flex-direction: column;
-  transform: scaleY(1.35);
+  transform: scaleY(1.22);
 }
 
-/* Right Perspective Wall: Angled inward from the right */
+/* Right Perspective Wall: Height bounded (top 140px, bottom 130px) so it NEVER overlaps ceiling or floor */
 .wall-right {
-  top: 0;
-  bottom: 0;
-  right: -20px;
-  width: 42%;
+  position: absolute;
+  top: 140px;
+  bottom: 130px;
+  right: 0;
+  width: 27%;
+  z-index: 10;
   transform-origin: 100% 50%;
-  transform: perspective(650px) rotateY(-52deg) translateZ(-20px);
+  transform: rotateY(-52deg);
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
-  padding-right: 20px;
+  padding-right: 24px;
+  pointer-events: none;
 }
 
 .typo-right {
-  font-size: clamp(62px, 12vw, 145px);
+  font-size: clamp(48px, 8.5vw, 110px);
+  color: #6e69f8;
+  text-shadow: 
+    0 0 25px rgba(110, 105, 248, 0.6),
+    0 0 60px rgba(110, 105, 248, 0.3);
   display: flex;
   flex-direction: column;
   text-align: right;
-  transform: scaleY(1.35);
+  transform: scaleY(1.22);
 }
 
 .typo-stack {
@@ -9323,37 +9350,43 @@ body {
 }
 
 .typo-sub-block {
-  font-size: clamp(16px, 2.6vw, 30px);
+  font-size: clamp(12px, 1.8vw, 22px);
   letter-spacing: 0.16em;
-  margin-top: 10px;
+  margin-top: 8px;
   color: rgba(163, 158, 255, 0.75);
   font-family: var(--font-code);
   font-weight: 800;
 }
 
-/* Bottom Floor Wall: Receding toward viewer */
+/* Bottom Floor Wall: Receding toward viewer - Centered & Elevated so S is 100% visible & never halved */
 .wall-bottom {
-  bottom: 8px;
-  left: 0;
-  right: 0;
-  height: 180px;
-  transform-origin: 50% 100%;
-  transform: perspective(700px) rotateX(48deg) translateZ(-30px);
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) rotateX(35deg);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  width: auto;
+  white-space: nowrap;
 }
 
 .typo-bottom {
-  font-size: clamp(65px, 12vw, 160px);
-  letter-spacing: 0.05em;
+  font-size: clamp(32px, 5.2vw, 66px);
+  letter-spacing: 0.12em;
   white-space: nowrap;
-  background: linear-gradient(0deg, #a39eff 0%, #6e69f8 70%, rgba(110, 105, 248, 0.35) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 40px rgba(110, 105, 248, 0.4));
+  text-align: center;
+  color: #a39eff;
+  text-shadow: 
+    0 0 22px rgba(163, 158, 255, 0.8),
+    0 0 50px rgba(110, 105, 248, 0.5);
 }
 
 .typo-floor-text {
   display: inline-block;
-  transform: scaleY(1.35);
+  transform: scaleY(1.25);
 }
 
 /* ── Center Focal Hero Area ───────────────────────────────── */
