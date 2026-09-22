@@ -11,6 +11,7 @@ import { EXAMPLE_PROGRAMS } from './data/examples';
 import { Sparkles, Code2, Columns2, Rows2, RotateCcw, Cpu, BookOpen, GripVertical, Eye, Terminal } from 'lucide-react';
 
 import ConsoleTerminal from './components/ConsoleTerminal';
+import IntroPage from './components/IntroPage';
 
 const RAW_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 const API_URL = RAW_API_URL.replace(/\/+$/, '').endsWith('/api')
@@ -18,6 +19,7 @@ const API_URL = RAW_API_URL.replace(/\/+$/, '').endsWith('/api')
   : `${RAW_API_URL.replace(/\/+$/, '')}/api`;
 
 function App() {
+  const [showIntro, setShowIntro] = useState(true);
   const [activeMode, setActiveMode] = useState('code'); // 'code' | 'problem'
   const [selectedExampleId, setSelectedExampleId] = useState(EXAMPLE_PROGRAMS[0].id);
   const [code, setCode] = useState(EXAMPLE_PROGRAMS[0].code);
@@ -202,6 +204,10 @@ function App() {
 
   const currentLine = player.currentEvent?.line || null;
 
+  if (showIntro) {
+    return <IntroPage onEnter={() => setShowIntro(false)} />;
+  }
+
   return (
     <div className={`app layout-${layoutMode}`}>
       {/* Glassmorphism Animated Background Blobs */}
@@ -214,7 +220,14 @@ function App() {
         {isMobile ? (
           <div className="mobile-header-stack">
             <div className="mobile-header-top">
-              <div className="app-logo">
+              <div
+                className="app-logo"
+                onClick={() => setShowIntro(true)}
+                role="button"
+                tabIndex={0}
+                title="Back to 3D Intro Showcase"
+                style={{ cursor: 'pointer' }}
+              >
                 <div className="app-logo-icon">
                   <Cpu size={16} />
                 </div>
@@ -257,7 +270,14 @@ function App() {
           /* Desktop Header */
           <>
             <div className="header-left">
-              <div className="app-logo">
+              <div
+                className="app-logo"
+                onClick={() => setShowIntro(true)}
+                role="button"
+                tabIndex={0}
+                title="Back to 3D Intro Showcase"
+                style={{ cursor: 'pointer' }}
+              >
                 <div className="app-logo-icon">
                   <Cpu size={18} />
                 </div>
@@ -330,6 +350,15 @@ function App() {
                   <span>Reset</span>
                 </button>
               )}
+
+              <button
+                className="icon-btn-secondary"
+                onClick={() => setShowIntro(true)}
+                title="Return to 3D Intro Showcase"
+              >
+                <Sparkles size={13} />
+                <span>Intro</span>
+              </button>
             </div>
           </>
         )}
