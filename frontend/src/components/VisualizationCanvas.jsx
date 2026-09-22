@@ -19,6 +19,8 @@ import GraphVisualizer from './GraphVisualizer';
 import HashTableVisualizer from './HashTableVisualizer';
 import BitVisualizer from './BitVisualizer';
 import DPVisualizer from './DPVisualizer';
+import RecursionVisualizer from './RecursionVisualizer';
+import PointerSwapVisualizer from './PointerSwapVisualizer';
 
 export default function VisualizationCanvas({
   event,
@@ -115,13 +117,55 @@ export default function VisualizationCanvas({
     );
   }, [arrays, timeline]);
 
-  // Check for Bit Manipulation (&, |, ^, <<, >>, ~, bitmask)
-  const hasBitwise = useMemo(() => {
-    return timeline.some(e => 
-      /[&|^~]|<<|>>/.test(e.sourceLine || '') && !/&&|\|\|/.test(e.sourceLine || '') &&
-      !/^\s*#include/.test(e.sourceLine || '')
+  // Detect Recursion (self-calling function or RECURSIVE_CALL events)
+  const hasRecursion = useMemo(() => {
+    // 1. Explicit recursive call events
+    const hasRecEvent = timeline.some(e =>
+      e.eventType === 'RECURSIVE_CALL' || e.eventType === 'FUNCTION_ENTERED'
     );
+    if (hasRecEvent) return true;
+
+    // 2. Same function appears at multiple depths in any callStack snapshot
+    const seenFuncAtMultipleDepths = timeline.some(e => {
+      if (!Array.isArray(e.callStack) || e.callStack.length < 2) return false;
+      const funcs = e.callStack.map(f => f.func || '').filter(f => f && f !== 'main' && !f.startsWith('__'));
+      const unique = new Set(funcs);
+      // If fewer unique funcs than total funcs, a function is repeated (recursive)
+      return unique.size > 0 && unique.size < funcs.length;
+    });
+    if (seenFuncAtMultipleDepths) return true;
+
+    // 3. Pattern: a function that calls itself (factorial(n-1), fib(n-1), etc.)
+    return timeline.some(e => {
+      if (!e.function || !e.sourceLine) return false;
+      const fn = e.function;
+      return new RegExp(`\\b${fn}\\s*\\(`).test(e.sourceLine) && fn !== 'main';
+    });
   }, [timeline]);
+
+  // Detect Pointer Swap program (swap function with pointer params, no real bitwise)
+  const hasPointerSwap = useMemo(() => {
+    const hasSwapFunc = timeline.some(e =>
+      /void\s+swap|swap\s*\(\s*&|\*a\s*=|\*b\s*=|temp\s*=\s*\*/.test(e.sourceLine || '')
+    );
+    return hasSwapFunc && !hasRecursion;
+  }, [timeline, hasRecursion]);
+
+  // Check for Bit Manipulation (&, |, ^, <<, >>, ~, bitmask)
+  // Strictly disabled when this is a pointer swap program
+  const hasBitwise = useMemo(() => {
+    if (hasPointerSwap) return false;
+    return timeline.some(e => {
+      const line = e.sourceLine || '';
+      if (/^\s*#include/.test(line)) return false;
+      if (/&&|\|\|/.test(line)) return false; // logical, not bitwise
+      if (/swap\s*\(/.test(line)) return false;
+      // Strip address-of occurrences: &varname inside function args or assignments
+      const stripped = line.replace(/[(&,\s]&\w+/g, ' ');
+      // Now check for real binary bitwise ops: a & b, a | b, a ^ b, ~a, <<, >>
+      return /\w\s*[&|^]\s*\w|<<|>>|~\w/.test(stripped);
+    });
+  }, [timeline, hasPointerSwap]);
 
   // Pointer variables pointing to arrays
   const pointerVars = useMemo(() => {
@@ -142,60 +186,150 @@ export default function VisualizationCanvas({
     return pVars;
   }, [variables, arrays, event]);
 
-  // Detect Stack Data Structure (array named stack/stk or top pointer)
+  // Detect Stack Data Structure (array named stack/stk or top pointer + any array)
   const stackData = useMemo(() => {
-    if (arrays) {
-      for (const [arrName, arr] of Object.entries(arrays)) {
-        if (/stack|stk/i.test(arrName) || (variables && ('top' in variables || 'sp' in variables))) {
-          const topVal = variables?.['top'] ?? variables?.['sp'] ?? (Array.isArray(arr) ? arr.length - 1 : 0);
-          return {
-            name: arrName,
-            array: arr,
-            top: typeof topVal === 'number' ? topVal : 0,
-            capacity: Array.isArray(arr) ? arr.length : 10
-          };
+    // Check if stack exists anywhere in execution
+    const hasStackArray = timeline.some(e => e.arrays && Object.keys(e.arrays).some(k => /^(stack|stk)\b/i.test(k))) ||
+                          timeline.some(e => e.variables && ('top' in e.variables || 'sp' in e.variables));
+    if (!hasStackArray) return null;
+
+    let stackName = 'stack';
+    let capacity = 5;
+    for (const ev of timeline) {
+      if (ev.arrays) {
+        for (const [k, arr] of Object.entries(ev.arrays)) {
+          if (/^(stack|stk)\b/i.test(k) && Array.isArray(arr)) {
+            stackName = k;
+            capacity = arr.length;
+            break;
+          }
         }
       }
     }
-    return null;
-  }, [arrays, variables]);
+
+    let currentTop = -1;
+    for (let i = currentStep; i >= 0; i--) {
+      const ev = timeline[i];
+      if (ev?.variables && ('top' in ev.variables || 'sp' in ev.variables)) {
+        const t = ev.variables['top'] ?? ev.variables['sp'];
+        if (typeof t === 'number' && Math.abs(t) < 1000) {
+          currentTop = t;
+          break;
+        }
+      }
+    }
+
+    let currentArray = new Array(capacity).fill(0);
+    for (let i = currentStep; i >= 0; i--) {
+      const ev = timeline[i];
+      if (ev?.arrays?.[stackName] && Array.isArray(ev.arrays[stackName])) {
+        currentArray = ev.arrays[stackName];
+        break;
+      }
+    }
+
+    return {
+      name: stackName,
+      array: currentArray,
+      top: currentTop,
+      capacity
+    };
+  }, [arrays, variables, timeline, currentStep]);
+
 
   // Detect Queue Data Structure (array named queue/q or front/rear pointers)
   const queueData = useMemo(() => {
-    if (arrays) {
-      for (const [arrName, arr] of Object.entries(arrays)) {
-        if (/queue|q\b/i.test(arrName) || (variables && ('front' in variables || 'rear' in variables))) {
-          const frontVal = variables?.['front'] ?? variables?.['head'] ?? 0;
-          const rearVal = variables?.['rear'] ?? variables?.['tail'] ?? (Array.isArray(arr) ? arr.length - 1 : 0);
-          return {
-            name: arrName,
-            array: arr,
-            front: typeof frontVal === 'number' ? frontVal : 0,
-            rear: typeof rearVal === 'number' ? rearVal : 0,
-            capacity: Array.isArray(arr) ? arr.length : 10
-          };
+    const hasQueueArray = timeline.some(e => e.arrays && Object.keys(e.arrays).some(k => /^(queue|q)\b/i.test(k))) ||
+                          timeline.some(e => e.variables && (('front' in e.variables && 'rear' in e.variables) || ('head' in e.variables && 'tail' in e.variables)));
+    if (!hasQueueArray) return null;
+
+    let queueName = 'queue';
+    let capacity = 5;
+    for (const ev of timeline) {
+      if (ev.arrays) {
+        for (const [k, arr] of Object.entries(ev.arrays)) {
+          if (/^(queue|q)\b/i.test(k) && Array.isArray(arr)) {
+            queueName = k;
+            capacity = arr.length;
+            break;
+          }
         }
       }
     }
-    return null;
-  }, [arrays, variables]);
+
+    let currentFront = 0;
+    let currentRear = -1;
+
+    for (let i = currentStep; i >= 0; i--) {
+      const ev = timeline[i];
+      if (ev?.variables && ('front' in ev.variables || 'head' in ev.variables)) {
+        const f = ev.variables['front'] ?? ev.variables['head'];
+        if (typeof f === 'number' && Math.abs(f) < 1000) {
+          currentFront = f;
+          break;
+        }
+      }
+    }
+
+    for (let i = currentStep; i >= 0; i--) {
+      const ev = timeline[i];
+      if (ev?.variables && ('rear' in ev.variables || 'tail' in ev.variables)) {
+        const r = ev.variables['rear'] ?? ev.variables['tail'];
+        if (typeof r === 'number' && Math.abs(r) < 1000) {
+          currentRear = r;
+          break;
+        }
+      }
+    }
+
+    let currentArray = new Array(capacity).fill(0);
+    for (let i = currentStep; i >= 0; i--) {
+      const ev = timeline[i];
+      if (ev?.arrays?.[queueName] && Array.isArray(ev.arrays[queueName])) {
+        currentArray = ev.arrays[queueName];
+        break;
+      }
+    }
+
+    return {
+      name: queueName,
+      array: currentArray,
+      front: currentFront,
+      rear: currentRear,
+      capacity
+    };
+  }, [arrays, variables, timeline, currentStep]);
 
   // Detect Singly Linked List (structs with next/val or dynamic nodes)
   const linkedListNodes = useMemo(() => {
-    if (!structs || Object.keys(structs).length === 0) return [];
-    const nodes = [];
-    for (const [sName, sFields] of Object.entries(structs)) {
-      if (typeof sFields === 'object' && ('next' in sFields || 'data' in sFields || 'val' in sFields)) {
-        nodes.push({
-          name: sName,
-          address: pointers?.[sName]?.targetAddress || pointers?.[sName]?.address || sName,
-          data: sFields.data ?? sFields.val ?? sFields.value,
-          next: sFields.next
-        });
+    function extractNodes(evStructs, evPointers) {
+      if (!evStructs || Object.keys(evStructs).length === 0) return [];
+      const nodes = [];
+      for (const [sName, sFields] of Object.entries(evStructs)) {
+        if (typeof sFields === 'object' && ('next' in sFields || 'data' in sFields || 'val' in sFields)) {
+          nodes.push({
+            name: sName,
+            address: evPointers?.[sName]?.targetAddress || evPointers?.[sName]?.address || sName,
+            data: sFields.data ?? sFields.val ?? sFields.value,
+            next: sFields.next
+          });
+        }
       }
+      return nodes;
     }
-    return nodes;
-  }, [structs, pointers]);
+
+    // Try current event first
+    let nodes = extractNodes(structs, pointers);
+    if (nodes.length > 0) return nodes;
+
+    // Scan timeline for step with richest linked list data
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const ev = timeline[i];
+      nodes = extractNodes(ev.structs, ev.pointers);
+      if (nodes.length > 0) return nodes;
+    }
+    return [];
+  }, [structs, pointers, timeline]);
 
   // List of active detected topics for the adaptive composition ribbon
   const activeTopicsList = useMemo(() => {
@@ -205,6 +339,8 @@ export default function VisualizationCanvas({
     if (hasHashTable) list.push('Hash Table');
     if (hasDP) list.push('Dynamic Programming');
     if (hasBitwise) list.push('Bit Manipulation');
+    if (hasRecursion) list.push('Recursion');
+    if (hasPointerSwap) list.push('Pointer Swap');
     if (stackData) list.push('Stack (LIFO)');
     if (queueData) list.push('Queue (FIFO)');
     if (linkedListNodes.length > 0) list.push('Linked List');
@@ -213,9 +349,9 @@ export default function VisualizationCanvas({
     if (hasPointers) list.push('Pointers');
     if (hasHeap) list.push('Dynamic Heap');
     return list;
-  }, [hasGraph, hasTree, hasHashTable, hasDP, hasBitwise, stackData, queueData, linkedListNodes, hasArrays, hasLoops, hasPointers, hasHeap]);
+  }, [hasGraph, hasTree, hasHashTable, hasDP, hasBitwise, hasRecursion, hasPointerSwap, stackData, queueData, linkedListNodes, hasArrays, hasLoops, hasPointers, hasHeap]);
 
-  const hasAnySpatialDiagram = hasArrays || hasLoops || hasPointers || hasStructs || hasHeap || hasStackOrCalls || stackData || queueData || linkedListNodes.length > 0 || hasTree || hasGraph || hasHashTable || hasDP || hasBitwise;
+  const hasAnySpatialDiagram = hasArrays || hasLoops || hasPointers || hasStructs || hasHeap || hasStackOrCalls || stackData || queueData || linkedListNodes.length > 0 || hasTree || hasGraph || hasHashTable || hasDP || hasBitwise || hasRecursion || hasPointerSwap;
 
   return (
     <div className="canvas-view-wrap">
@@ -236,56 +372,28 @@ export default function VisualizationCanvas({
         </div>
       )}
 
-      {/* 1. Graph Visualizer (When Graph algorithms or adjacency structures exist) */}
-      {hasGraph && (
-        <GraphVisualizer
-          event={event}
-          variables={variables}
-          arrays={arrays}
+      {/* 0a. Recursion Tree (Shown FIRST for recursive programs — faithful cascading call tree) */}
+      {hasRecursion && (
+        <RecursionVisualizer
+          timeline={timeline}
+          currentStep={currentStep}
           animationDuration={animationDuration}
         />
       )}
 
-      {/* 2. Tree Visualizer (When Tree / BST structures exist) */}
-      {hasTree && (
-        <TreeVisualizer
-          event={event}
+      {/* 0b. Pointer Swap Visualizer (shown before bitwise for swap programs) */}
+      {hasPointerSwap && (
+        <PointerSwapVisualizer
           variables={variables}
-          structs={structs}
+          pointers={pointers}
+          event={event}
+          timeline={timeline}
+          currentStep={currentStep}
           animationDuration={animationDuration}
         />
       )}
 
-      {/* 3. Hash Table Visualizer (When Hashing / Bucket mapping exists) */}
-      {hasHashTable && (
-        <HashTableVisualizer
-          event={event}
-          variables={variables}
-          arrays={arrays}
-          animationDuration={animationDuration}
-        />
-      )}
-
-      {/* 4. Dynamic Programming Visualizer (When dp / memo / recurrence exists) */}
-      {hasDP && (
-        <DPVisualizer
-          event={event}
-          variables={variables}
-          arrays={arrays}
-          animationDuration={animationDuration}
-        />
-      )}
-
-      {/* 5. Bit Manipulation Visualizer (When bitwise &, |, ^, shifts exist) */}
-      {hasBitwise && (
-        <BitVisualizer
-          event={event}
-          variables={variables}
-          animationDuration={animationDuration}
-        />
-      )}
-
-      {/* 6. Stack DSA Visualizer (Vertical LIFO Chamber) */}
+      {/* 1. Stack DSA Visualizer (Vertical LIFO Chamber matching reference) */}
       {stackData && (
         <StackVisualizer
           stackData={stackData}
@@ -295,7 +403,7 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 7. Queue DSA Visualizer (Horizontal FIFO Conveyor) */}
+      {/* 2. Queue DSA Visualizer (Horizontal FIFO Conveyor matching reference) */}
       {queueData && (
         <QueueVisualizer
           queueData={queueData}
@@ -305,7 +413,7 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 8. Linked List Visualizer (Chain of Nodes with Pointer Arrows) */}
+      {/* 3. Linked List Visualizer (Chain of Nodes with Pointer Arrows matching WsCube) */}
       {linkedListNodes.length > 0 && (
         <LinkedListView
           nodes={linkedListNodes}
@@ -315,8 +423,57 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 1. Array Iteration View (When program uses arrays not classified as stack/queue) */}
-      {hasArrays && !stackData && !queueData && (
+      {/* 4. Graph Visualizer (When Graph algorithms or adjacency structures exist) */}
+      {hasGraph && (
+        <GraphVisualizer
+          event={event}
+          variables={variables}
+          arrays={arrays}
+          animationDuration={animationDuration}
+        />
+      )}
+
+      {/* 5. Tree Visualizer (When Tree / BST structures exist) */}
+      {hasTree && (
+        <TreeVisualizer
+          event={event}
+          variables={variables}
+          structs={structs}
+          animationDuration={animationDuration}
+        />
+      )}
+
+      {/* 6. Hash Table Visualizer (When Hashing / Bucket mapping exists) */}
+      {hasHashTable && (
+        <HashTableVisualizer
+          event={event}
+          variables={variables}
+          arrays={arrays}
+          animationDuration={animationDuration}
+        />
+      )}
+
+      {/* 7. Dynamic Programming Visualizer (When dp / memo / recurrence exists) */}
+      {hasDP && (
+        <DPVisualizer
+          event={event}
+          variables={variables}
+          arrays={arrays}
+          animationDuration={animationDuration}
+        />
+      )}
+
+      {/* 8. Bit Manipulation Visualizer (When bitwise &, |, ^, shifts exist — excluded for pointer swaps) */}
+      {hasBitwise && !hasPointerSwap && (
+        <BitVisualizer
+          event={event}
+          variables={variables}
+          animationDuration={animationDuration}
+        />
+      )}
+
+      {/* 9. Array Iteration View (When program uses arrays not classified as stack/queue/dp/hash) */}
+      {hasArrays && !stackData && !queueData && !hasDP && !hasHashTable && (
         <ArrayView
           arrays={arrays}
           highlight={highlight}
@@ -327,14 +484,16 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Condition Evaluation (Reference 1 Section 2: Amber scanpulse → green/red resolve → branch taken) */}
-      <ConditionView event={event} />
+      {/* Condition Evaluation (Shown for branching programs without specialized DSA containers) */}
+      {!hasRecursion && !stackData && !queueData && !hasPointerSwap && (
+        <ConditionView event={event} />
+      )}
 
-      {/* 2. Loop Trail Recedes in 3D (Reference 1 Section 3) */}
+      {/* Loop Trail Recedes in 3D */}
       <LoopView event={event} />
 
-      {/* 2b. Loop Storyteller — Shows for ALL programs with loops (teaches what the loop does) */}
-      {hasLoops && (
+      {/* Loop Storyteller — Shows for programs with loops when not already focused on Stack/Queue/Recursion */}
+      {hasLoops && !stackData && !queueData && !hasRecursion && (
         <IterationSpaceView
           event={event}
           timeline={timeline}
@@ -346,8 +505,8 @@ export default function VisualizationCanvas({
       {/* Persistent Loop & Condition Status Strip — Smooth single-line indicator */}
       <LoopConditionStrip event={event} />
 
-      {/* 3. Pointers & Memory Links */}
-      {hasPointers && (
+      {/* Pointers & Memory Links (shown for pointer programs without specialized PointerSwap) */}
+      {hasPointers && !hasPointerSwap && (
         <PointerView
           pointers={pointers}
           variables={variables}
@@ -356,8 +515,8 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 4. Struct Instances View */}
-      {hasStructs && (
+      {/* Struct Instances View (shown when not displayed as Linked List) */}
+      {hasStructs && linkedListNodes.length === 0 && (
         <StructView
           structs={structs}
           event={event}
@@ -365,8 +524,8 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 5. Unified Stack Diagram View (Stack Frames + Recursion Tree) */}
-      {hasStackOrCalls && (
+      {/* Unified Call Stack View (GDB Function Call Stack — hidden for Recursion and Stack DSA to avoid confusion) */}
+      {hasStackOrCalls && !hasRecursion && !stackData && (
         <StackDiagramView
           callStack={callStack || []}
           currentEvent={event}

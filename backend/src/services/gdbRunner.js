@@ -144,6 +144,58 @@ function sanitizeError(msg, srcPath, exePath) {
 }
 
 /**
+ * Extract file-scope (global) variable names from C source code.
+ * Returns a list of variable names declared outside any function block.
+ * These are typically: stack[], top, queue[], front, rear, head, visited[], etc.
+ */
+function extractGlobalVarNames(sourceLines) {
+  const globals = [];
+  let braceDepth = 0;
+  
+  for (let i = 0; i < sourceLines.length; i++) {
+    const raw = sourceLines[i];
+    const line = raw.trim();
+    
+    // Skip preprocessor, includes, typedefs, comments
+    if (/^#|^\/\/|^\/\*|^\*|^$/.test(line)) {
+      const opens = (raw.match(/{/g) || []).length;
+      const closes = (raw.match(/}/g) || []).length;
+      braceDepth += opens - closes;
+      continue;
+    }
+    
+    const opens = (raw.match(/{/g) || []).length;
+    const closes = (raw.match(/}/g) || []).length;
+    
+    // Only process file-scope declarations (braceDepth === 0 BEFORE this line)
+    if (braceDepth === 0) {
+      // Match: int varName, int arr[N], char str[N] — but not function decls
+      // Pattern: type_keyword varname (optionally [size]) ;
+      const varDecl = line.match(/^(?:int|float|double|char|long|short|unsigned|struct\s+\w+)\s+(\w+)(?:\s*\[\d+\])?(?:\s*=\s*[^;]+)?;/);
+      if (varDecl) {
+        const varName = varDecl[1];
+        // Skip if this looks like a function definition on the same line (has open paren before open brace)
+        if (!line.includes('(') || line.indexOf(';') < line.indexOf('(')) {
+          globals.push(varName);
+        }
+      }
+      
+      // Also match simple pointer decls: int *head = NULL;
+      const ptrDecl = line.match(/^(?:int|float|double|char|long|short|unsigned|struct\s+\w+)\s+\*+(\w+)(?:\s*=\s*[^;]+)?;/);
+      if (ptrDecl) {
+        globals.push(ptrDecl[1]);
+      }
+    }
+    
+    braceDepth += opens - closes;
+    if (braceDepth < 0) braceDepth = 0;
+  }
+  
+  // Deduplicate
+  return [...new Set(globals)];
+}
+
+/**
  * Drive GDB via MI2 with clean synchronization separating query commands from exec commands.
  */
 function stepThroughGDB(exeName, sourceLines, workDir) {
@@ -284,6 +336,9 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
         let lastKnownPointers = {};
         const addressCache = {}; // Cache variable addresses to avoid redundant queries
 
+        // Pre-extract global variable names from source (file-scope: stack, top, queue, front, rear, etc.)
+        const globalVarNames = extractGlobalVarNames(sourceLines);
+
         // Main stepping loop
         while (!programExited && stepCount < MAX_STEPS) {
           // Get current frame info
@@ -357,7 +412,17 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
                   const derefRes = await sendQuery(`-data-evaluate-expression *${name}`);
                   const parsedDeref = parseExpressionValue(derefRes.join('\n'));
                   if (parsedDeref && !parsedDeref.includes('Cannot access memory')) {
-                    derefVal = isNaN(parseFloat(parsedDeref)) ? parsedDeref : parseFloat(parsedDeref);
+                    if (parsedDeref.startsWith('{') && parsedDeref.includes('=')) {
+                      const fields = parseStructFields(parsedDeref);
+                      if (fields) {
+                        derefVal = fields;
+                        structs[name] = fields;
+                      } else {
+                        derefVal = parsedDeref;
+                      }
+                    } else {
+                      derefVal = isNaN(parseFloat(parsedDeref)) ? parsedDeref : parseFloat(parsedDeref);
+                    }
                   }
                 } catch (e) {}
               }
@@ -402,7 +467,7 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
             }
 
             // Check if string / char array (e.g. "hello" or 0x61fe10 "hello")
-            const strMatch = typeof rawVal === 'string' && rawVal.match(/^(?:0x[0-9a-fA-F]+\s+)?"((?:\\.|[^"\\])*)"/);
+            const strMatch = typeof rawVal === 'string' && rawVal.match(/^(?:0x[0-9a-fA-F]+\s+)?"((?:\\.|[^"\\])*)"/)
             if (strMatch) {
               const cleanStr = strMatch[1].split('\\000')[0].replace(/\\"/g, '"');
               variables[name] = cleanStr;
@@ -416,6 +481,50 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
             const num = parseFloat(rawVal);
             variables[name] = isNaN(num) ? rawVal : num;
           }
+
+          // ─── GLOBAL VARIABLE ENRICHMENT ─────────────────────────────────────────
+          // Query file-scope globals (stack[], top, queue[], front, rear, head, etc.)
+          // These are not captured by -stack-list-locals since they're outside any frame
+          for (const gName of globalVarNames) {
+            // Skip if already captured from locals
+            if (gName in variables || gName in arrays || gName in structs) continue;
+            
+            try {
+              const gRes = await sendQuery(`-data-evaluate-expression ${gName}`);
+              const gVal = parseExpressionValue(gRes.join('\n'));
+              
+              if (!gVal || gVal.startsWith('<') || gVal.includes('No symbol')) continue;
+              
+              // Array (e.g., "{10, 20, 30, 0, 0}")
+              if (gVal.startsWith('{') && !gVal.includes('=')) {
+                const parsedArr = parseArrayValue(gVal);
+                if (parsedArr) {
+                  arrays[gName] = parsedArr;
+                  continue;
+                }
+              }
+              
+              // Struct ({field = val, ...})
+              if (gVal.startsWith('{') && gVal.includes('=')) {
+                const structFields = parseStructFields(gVal);
+                if (structFields) {
+                  structs[gName] = structFields;
+                  continue;
+                }
+              }
+              
+              // Pointer (0x...)
+              if (/^0x[0-9a-fA-F]+$/.test(gVal.trim())) {
+                variables[gName] = gVal.trim();
+                continue;
+              }
+              
+              // Scalar
+              const gNum = parseFloat(gVal);
+              variables[gName] = isNaN(gNum) ? gVal : gNum;
+            } catch (e) {}
+          }
+          // ────────────────────────────────────────────────────────────────────────
 
           // Resolve which local variable pointers point to
           for (const ptr of Object.values(pointers)) {
