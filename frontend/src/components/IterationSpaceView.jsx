@@ -1,8 +1,8 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   RotateCw, Play, CheckCircle2, XCircle, Zap, Activity, 
-  ChevronRight, Terminal, TrendingUp, TrendingDown, Eye, HelpCircle,
+  ChevronRight, ChevronDown, ChevronUp, Terminal, TrendingUp, TrendingDown, Eye, HelpCircle,
   Sparkles, Layers
 } from 'lucide-react';
 
@@ -40,6 +40,7 @@ export default function IterationSpaceView({
 }) {
   const variables = event?.variables || {};
   const timelineChipsRef = useRef(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   // ── Analyze loop structure from timeline ──
   const loopAnalysis = useMemo(() => {
@@ -154,7 +155,7 @@ export default function IterationSpaceView({
     };
   }, [timeline]);
 
-  // Current iteration data
+  // Find current iteration from current step
   const currentIterationData = useMemo(() => {
     if (!loopAnalysis || loopAnalysis.iterations.length === 0) return null;
     const { iterations } = loopAnalysis;
@@ -170,12 +171,16 @@ export default function IterationSpaceView({
     return { ...iterations[0], index: 0 };
   }, [loopAnalysis, currentStep]);
 
-  // Auto-scroll timeline chips
+  // Auto-scroll timeline chips horizontally within their container ONLY (never scrolls parent page/canvas)
   useEffect(() => {
     if (timelineChipsRef.current && currentIterationData) {
-      const chip = timelineChipsRef.current.querySelector(`.flow-iter-chip[data-index="${currentIterationData.index}"]`);
+      const container = timelineChipsRef.current;
+      const chip = container.querySelector(`.flow-iter-chip[data-index="${currentIterationData.index}"]`);
       if (chip) {
-        chip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        const containerRect = container.getBoundingClientRect();
+        const chipRect = chip.getBoundingClientRect();
+        const scrollOffset = (chipRect.left - containerRect.left) + container.scrollLeft - (container.clientWidth / 2) + (chipRect.width / 2);
+        container.scrollTo({ left: Math.max(0, scrollOffset), behavior: 'smooth' });
       }
     }
   }, [currentIterationData]);
@@ -323,14 +328,38 @@ export default function IterationSpaceView({
           </div>
         </div>
 
-        {/* Iteration count pill */}
-        <div className="flow-counter-pill">
-          <span className="counter-curr">{currentIndex + 1}</span>
-          <span className="counter-sep">/</span>
-          <span className="counter-total">{Math.max(totalIterations, 1)}</span>
+        {/* Iteration count pill & collapse toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="flow-counter-pill">
+            <span className="counter-curr">{currentIndex + 1}</span>
+            <span className="counter-sep">/</span>
+            <span className="counter-total">{Math.max(totalIterations, 1)}</span>
+          </div>
+          <button
+            type="button"
+            className="flow-collapse-btn"
+            onClick={() => setIsCollapsed(prev => !prev)}
+            title={isCollapsed ? "Expand Loop Flow Storyteller" : "Collapse Loop Flow Storyteller"}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '6px',
+              color: 'var(--text-secondary, #94a3b8)',
+              padding: '4px 6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
         </div>
       </div>
 
+      {!isCollapsed && (
+        <>
       {/* ── 4-Stage Animated Loop Pipeline (Visual Flowchart) ── */}
       <div className="flow-pipeline-track">
         {/* Stage 1: Init */}
@@ -553,6 +582,8 @@ export default function IterationSpaceView({
             })}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
