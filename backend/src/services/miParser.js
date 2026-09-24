@@ -248,10 +248,22 @@ export function parseArrayValue(str) {
 
   // 1D array
   const parts = inner.split(',').map(s => s.trim());
-  const nums = parts.map(p => {
-    const n = parseFloat(p);
-    return isNaN(n) ? p : n;
-  });
+  const nums = [];
+  for (const p of parts) {
+    if (!p) continue;
+    const repeatMatch = p.match(/^([^\s<]+)\s*<repeats\s+(\d+)\s+times>/);
+    if (repeatMatch) {
+      const valStr = repeatMatch[1].trim();
+      const count = parseInt(repeatMatch[2], 10);
+      const val = isNaN(parseFloat(valStr)) ? valStr.replace(/^'|'$/g, '') : parseFloat(valStr);
+      for (let k = 0; k < Math.min(count, 100); k++) {
+        nums.push(val);
+      }
+    } else {
+      const n = parseFloat(p);
+      nums.push(isNaN(n) ? p.replace(/^'|'$/g, '') : n);
+    }
+  }
 
   return nums;
 }

@@ -348,8 +348,14 @@ export default function VisualizationCanvas({
     if (hasLoops) list.push('Loop Radar');
     if (hasPointers) list.push('Pointers');
     if (hasHeap) list.push('Dynamic Heap');
+    if (variables && Object.keys(variables).some(k => !['argc', 'argv', '__func__'].includes(k))) list.push('Stack Variables');
     return list;
-  }, [hasGraph, hasTree, hasHashTable, hasDP, hasBitwise, hasRecursion, hasPointerSwap, stackData, queueData, linkedListNodes, hasArrays, hasLoops, hasPointers, hasHeap]);
+  }, [hasGraph, hasTree, hasHashTable, hasDP, hasBitwise, hasRecursion, hasPointerSwap, stackData, queueData, linkedListNodes, hasArrays, hasLoops, hasPointers, hasHeap, variables]);
+
+  const hasVariables = useMemo(() => {
+    if (!variables) return false;
+    return Object.keys(variables).some(k => !['argc', 'argv', '__func__'].includes(k));
+  }, [variables]);
 
   const hasAnySpatialDiagram = hasArrays || hasLoops || hasPointers || hasStructs || hasHeap || hasStackOrCalls || stackData || queueData || linkedListNodes.length > 0 || hasTree || hasGraph || hasHashTable || hasDP || hasBitwise || hasRecursion || hasPointerSwap;
 
@@ -545,8 +551,8 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 7. Variables fallback only when no spatial diagram exists, or as collapsed supporting reference */}
-      {!hasAnySpatialDiagram && (
+      {/* 7. Stack Variables View — Rendered whenever variables exist so scalar calculations (max, min, sum, counters, flags) are always visible and animated */}
+      {hasVariables && (
         <VariableView
           variables={variables}
           changes={changes}

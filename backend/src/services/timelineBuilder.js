@@ -163,13 +163,21 @@ export function evaluatePrintf(sourceLine, variables = {}, arrays = {}) {
   }
 
   function evalArg(argStr) {
+    if (!argStr) return '';
+    const trimmed = argStr.trim();
+
+    // String literal e.g. "prime"
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      return trimmed.slice(1, -1);
+    }
+
     // 1. Direct variable lookup
-    if (variables[argStr] !== undefined) {
-      return variables[argStr];
+    if (variables[trimmed] !== undefined) {
+      return variables[trimmed];
     }
 
     // 2. 1D Array lookup e.g. arr[i] or arr[0]
-    const arr1d = argStr.match(/^([a-zA-Z_]\w*)\[([^\]]+)\]$/);
+    const arr1d = trimmed.match(/^([a-zA-Z_]\w*)\[([^\]]+)\]$/);
     if (arr1d) {
       const arrName = arr1d[1];
       const idxExpr = arr1d[2].trim();
@@ -180,7 +188,7 @@ export function evaluatePrintf(sourceLine, variables = {}, arrays = {}) {
     }
 
     // 3. 2D Array lookup e.g. m[i][j]
-    const arr2d = argStr.match(/^([a-zA-Z_]\w*)\[([^\]]+)\]\[([^\]]+)\]$/);
+    const arr2d = trimmed.match(/^([a-zA-Z_]\w*)\[([^\]]+)\]\[([^\]]+)\]$/);
     if (arr2d) {
       const arrName = arr2d[1];
       const rExpr = arr2d[2].trim();
@@ -192,28 +200,50 @@ export function evaluatePrintf(sourceLine, variables = {}, arrays = {}) {
       }
     }
 
-    // 4. Expression evaluation e.g. i * 10 or n + 1
+    // 4. Expression evaluation e.g. a + b, n % 2 == 0 ? "even" : "odd"
     try {
-      let expr = argStr;
+      let expr = trimmed;
+      // Replace variables with their values
       for (const [v, val] of Object.entries(variables)) {
         if (typeof val === 'number') {
           expr = expr.replace(new RegExp(`\\b${v}\\b`, 'g'), String(val));
+        } else if (typeof val === 'string') {
+          expr = expr.replace(new RegExp(`\\b${v}\\b`, 'g'), JSON.stringify(val));
         }
       }
-      const sanitized = expr.replace(/[^0-9+\-*/%(). ]/g, '');
-      if (sanitized.length > 0 && sanitized.length < 40) {
-        return Function('"use strict"; return (' + sanitized + ')')();
-      }
+      return Function('"use strict"; return (' + expr + ')')();
     } catch {}
 
-    return argStr;
+    return trimmed;
   }
 
   let argIndex = 0;
-  const replaced = formatStr.replace(/%[difsugx]/g, (match) => {
+  // Match full C format specifiers e.g. %d, %i, %.2f, %lf, %lld, %c, %s, %p, %x, %u
+  const replaced = formatStr.replace(/%(?:\d+\$)?[-+ 0#]*\d*(?:\.(\d+))?[hljztL]*([diuoxXfFeEgGaAcsp%])/g, (match, precision, specifier) => {
+    if (specifier === '%') return '%';
     if (argIndex < args.length) {
-      const val = evalArg(args[argIndex++]);
-      return val !== undefined ? val : match;
+      const rawVal = evalArg(args[argIndex++]);
+      if (rawVal === undefined || rawVal === null) return match;
+
+      if (specifier === 'c') {
+        if (typeof rawVal === 'number') return String.fromCharCode(rawVal);
+        return String(rawVal)[0] || '';
+      }
+      if (['f', 'F', 'e', 'E', 'g', 'G'].includes(specifier)) {
+        const num = parseFloat(rawVal);
+        if (!isNaN(num)) {
+          return precision !== undefined ? num.toFixed(parseInt(precision, 10)) : String(num);
+        }
+      }
+      if (['d', 'i', 'u', 'ld', 'lld'].includes(specifier)) {
+        const num = parseInt(rawVal, 10);
+        return !isNaN(num) ? String(num) : String(rawVal);
+      }
+      if (['x', 'X'].includes(specifier)) {
+        const num = parseInt(rawVal, 10);
+        return !isNaN(num) ? num.toString(16) : String(rawVal);
+      }
+      return String(rawVal);
     }
     return match;
   });

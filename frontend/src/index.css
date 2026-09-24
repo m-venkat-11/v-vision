@@ -300,7 +300,8 @@ body {
   border: 1px solid var(--border-default);
   padding: 4px 10px;
   border-radius: var(--radius-md);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  max-width: 230px;
   transition: all 180ms ease;
 }
 
@@ -311,6 +312,7 @@ body {
 
 .selector-icon {
   color: var(--accent-light);
+  flex-shrink: 0;
 }
 
 .select-preset {
@@ -319,11 +321,15 @@ body {
   border: none;
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   padding-right: 18px;
   cursor: pointer;
   outline: none;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right center;
@@ -335,16 +341,23 @@ body {
 }
 
 .example-description-pill {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 350px;
+  max-width: 200px;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-subtle);
+  flex-shrink: 1;
+}
+
+@media (max-width: 1380px) {
+  .example-description-pill {
+    display: none;
+  }
 }
 
 .header-right {
@@ -9564,4 +9577,422 @@ body {
   }
 }
 
+/* ==========================================================================
+   Write Your Own Code Playground & Custom Section Styles
+   ========================================================================== */
 
+/* Mode Tab Custom Pill */
+.mode-tab-custom {
+  position: relative;
+}
+
+.mode-tab-custom.active {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(6, 78, 59, 0.25));
+  color: #34d399;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
+}
+
+.mode-custom-pill {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.2);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  margin-left: 4px;
+}
+
+/* Header Custom Workspace Indicators */
+.header-custom-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-workspace-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: #6ee7b7;
+}
+
+.custom-selector-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 2px 10px;
+}
+
+.select-custom-template {
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  padding: 4px 0;
+}
+
+.select-custom-template option {
+  background: #0d1117;
+  color: #f1f5f9;
+}
+
+.btn-header-new-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(52, 211, 153, 0.15);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: #a7f3d0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-header-new-code:hover {
+  background: rgba(52, 211, 153, 0.25);
+  transform: translateY(-1px);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.3);
+}
+
+.btn-switch-to-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-switch-to-custom:hover {
+  background: rgba(56, 189, 248, 0.22);
+  transform: translateY(-1px);
+}
+
+/* Panel Title Custom Styling */
+.panel-title-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e2e8f0;
+}
+
+.badge-custom-playground {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+/* Template Pills Row inside CodeEditor Toolbar */
+.custom-editor-banner {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.08), rgba(56, 189, 248, 0.05));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.template-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.template-pills-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-right: 2px;
+}
+
+.template-pill-btn {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.template-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.template-pill-btn.active {
+  background: rgba(52, 211, 153, 0.18);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #6ee7b7;
+  font-weight: 600;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.15);
+}
+
+.template-pill-btn.btn-new-code {
+  background: rgba(129, 140, 248, 0.15);
+  border-color: rgba(129, 140, 248, 0.35);
+  color: #c7d2fe;
+}
+
+.template-pill-btn.btn-new-code:hover {
+  background: rgba(129, 140, 248, 0.25);
+  color: #ffffff;
+}
+
+.custom-tip-badge {
+  font-size: 11px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.custom-tip-badge span.tip-highlight {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* Stack Variables View Enhancements */
+.rv-vars-section {
+  position: relative;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  margin-bottom: 18px;
+}
+
+.rv-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 12px;
+  letter-spacing: -0.2px;
+}
+
+.rv-count-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.rv-var-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.rv-var-box {
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  font-family: var(--font-code);
+  transition: all 0.35s ease;
+}
+
+.rv-var-box-neutral {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.rv-var-box-new {
+  border-color: #34d399;
+  background: linear-gradient(160deg, rgba(52, 211, 153, 0.18), rgba(52, 211, 153, 0.03));
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.35), 0 0 18px rgba(52, 211, 153, 0.25);
+  animation: bounceIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rv-var-box-changed {
+  border-color: #b388ff;
+  background: linear-gradient(160deg, rgba(179, 136, 255, 0.2), rgba(179, 136, 255, 0.03));
+  box-shadow: 0 0 0 1px rgba(179, 136, 255, 0.4), 0 0 20px rgba(179, 136, 255, 0.3);
+  animation: bounceIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rv-var-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.rv-var-type {
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rv-var-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.rv-var-val-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.rv-var-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  word-break: break-all;
+}
+
+.rv-var-pill-new {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(52, 211, 153, 0.2);
+  color: #6ee7b7;
+  font-weight: 700;
+}
+
+.rv-var-pill-chg {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(179, 136, 255, 0.2);
+  color: #d8b4fe;
+  font-weight: 700;
+}
+
+.rv-var-pill-diff {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.rv-diff-pos {
+  background: rgba(52, 211, 153, 0.2);
+  color: #6ee7b7;
+}
+
+.rv-diff-neg {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
+}
+
+.rv-var-prev {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.crumb-from {
+  color: #64748b;
+  text-decoration: line-through;
+}
+
+.crumb-arrow {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.crumb-to {
+  color: #d8b4fe;
+  font-weight: 600;
+}
+
+/* Preset Algorithm Banner inside CodeEditor */
+.preset-editor-banner {
+  background: linear-gradient(90deg, rgba(79, 195, 255, 0.08), rgba(129, 140, 248, 0.05));
+}
+
+.example-selector-wrap-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  padding: 2px 8px;
+  transition: all 0.2s ease;
+}
+
+.example-selector-wrap-inline:hover {
+  border-color: rgba(79, 195, 255, 0.4);
+  box-shadow: 0 0 10px rgba(79, 195, 255, 0.15);
+}
+
+.select-preset-inline {
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.select-preset-inline option {
+  background: #0d1117;
+  color: #f1f5f9;
+}
+
+.preset-inline-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 440px;
+}

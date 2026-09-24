@@ -8,7 +8,8 @@ import QuestionInput from './components/QuestionInput';
 import ExplanationPanel from './components/ExplanationPanel';
 import { useTimelinePlayer } from './hooks/useTimelinePlayer';
 import { EXAMPLE_PROGRAMS } from './data/examples';
-import { Sparkles, Code2, Columns2, Rows2, RotateCcw, Cpu, BookOpen, GripVertical, Eye, Terminal } from 'lucide-react';
+import { CUSTOM_STARTER_TEMPLATES } from './data/customTemplates';
+import { Sparkles, Code2, Columns2, Rows2, RotateCcw, Cpu, BookOpen, GripVertical, Eye, Terminal, PenTool } from 'lucide-react';
 
 import ConsoleTerminal from './components/ConsoleTerminal';
 import IntroPage from './components/IntroPage';
@@ -20,8 +21,26 @@ const API_URL = RAW_API_URL.replace(/\/+$/, '').endsWith('/api')
 
 function App() {
   const [showIntro, setShowIntro] = useState(true);
-  const [activeMode, setActiveMode] = useState('code'); // 'code' | 'problem'
+  const [activeMode, setActiveMode] = useState('code'); // 'code' | 'custom' | 'problem'
   const [selectedExampleId, setSelectedExampleId] = useState(EXAMPLE_PROGRAMS[0].id);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('blank');
+
+  // Persist user's custom code across sessions & mode switches
+  const [userCustomCode, setUserCustomCode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('vvision_custom_code');
+      if (saved && saved.trim()) return saved;
+    }
+    return CUSTOM_STARTER_TEMPLATES[0].code;
+  });
+  const [userCustomInput, setUserCustomInput] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('vvision_custom_input');
+      if (saved !== null) return saved;
+    }
+    return CUSTOM_STARTER_TEMPLATES[0].input || '';
+  });
+
   const [code, setCode] = useState(EXAMPLE_PROGRAMS[0].code);
   const [customInput, setCustomInput] = useState(EXAMPLE_PROGRAMS[0].input || '');
   const [isLoading, setIsLoading] = useState(false);
@@ -54,6 +73,50 @@ function App() {
   const currentExample = useMemo(() => {
     return EXAMPLE_PROGRAMS.find(p => p.id === selectedExampleId) || EXAMPLE_PROGRAMS[0];
   }, [selectedExampleId]);
+
+  const currentTemplate = useMemo(() => {
+    return CUSTOM_STARTER_TEMPLATES.find(t => t.id === selectedTemplateId) || CUSTOM_STARTER_TEMPLATES[0];
+  }, [selectedTemplateId]);
+
+  // Mode switcher handler with custom code preservation
+  const handleSelectMode = useCallback((newMode) => {
+    if (newMode === activeMode) return;
+    setError(null);
+    setAppState('idle');
+    player.setTimeline([]);
+
+    if (newMode === 'code') {
+      const ex = EXAMPLE_PROGRAMS.find(p => p.id === selectedExampleId) || EXAMPLE_PROGRAMS[0];
+      setCode(ex.code);
+      setCustomInput(ex.input || '');
+    } else if (newMode === 'custom') {
+      setCode(userCustomCode);
+      setCustomInput(userCustomInput);
+    }
+    setActiveMode(newMode);
+  }, [activeMode, selectedExampleId, userCustomCode, userCustomInput, player]);
+
+  // Code change handler with local persistence for custom programs
+  const handleCodeChange = useCallback((newCode) => {
+    setCode(newCode);
+    if (activeMode === 'custom') {
+      setUserCustomCode(newCode);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vvision_custom_code', newCode);
+      }
+    }
+  }, [activeMode]);
+
+  // Stdin custom input change handler
+  const handleCustomInputChange = useCallback((newInput) => {
+    setCustomInput(newInput);
+    if (activeMode === 'custom') {
+      setUserCustomInput(newInput);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vvision_custom_input', newInput);
+      }
+    }
+  }, [activeMode]);
 
   // Execute C Code via GCC/GDB Backend
   const handleVisualize = useCallback(async () => {
@@ -145,10 +208,14 @@ function App() {
     }
   }, [problemLoading, player]);
 
-  // Switch from Question Mode to Code Mode with starter code
+  // Switch from Question Mode to Custom Playground with starter code
   const handleTryCode = useCallback((starterCode) => {
     setCode(starterCode);
-    setActiveMode('code');
+    setUserCustomCode(starterCode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('vvision_custom_code', starterCode);
+    }
+    setActiveMode('custom');
     setAppState('idle');
     player.setTimeline([]);
   }, [player]);
@@ -166,13 +233,58 @@ function App() {
     }
   }, [player]);
 
-  const handleResetEditor = useCallback(() => {
-    setCode(currentExample.code);
-    setCustomInput(currentExample.input || '');
+  const handleTemplateChange = useCallback((templateId) => {
+    const tpl = CUSTOM_STARTER_TEMPLATES.find(t => t.id === templateId);
+    if (tpl) {
+      setSelectedTemplateId(templateId);
+      setCode(tpl.code);
+      setCustomInput(tpl.input || '');
+      setUserCustomCode(tpl.code);
+      setUserCustomInput(tpl.input || '');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vvision_custom_code', tpl.code);
+        localStorage.setItem('vvision_custom_input', tpl.input || '');
+      }
+      setError(null);
+      setAppState('idle');
+      player.setTimeline([]);
+    }
+  }, [player]);
+
+  const handleNewCustomCode = useCallback(() => {
+    const blank = CUSTOM_STARTER_TEMPLATES[0];
+    setSelectedTemplateId('blank');
+    setCode(blank.code);
+    setCustomInput('');
+    setUserCustomCode(blank.code);
+    setUserCustomInput('');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('vvision_custom_code', blank.code);
+      localStorage.setItem('vvision_custom_input', '');
+    }
     setError(null);
     setAppState('idle');
     player.setTimeline([]);
-  }, [currentExample, player]);
+  }, [player]);
+
+  const handleResetEditor = useCallback(() => {
+    if (activeMode === 'custom') {
+      setCode(currentTemplate.code);
+      setCustomInput(currentTemplate.input || '');
+      setUserCustomCode(currentTemplate.code);
+      setUserCustomInput(currentTemplate.input || '');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vvision_custom_code', currentTemplate.code);
+        localStorage.setItem('vvision_custom_input', currentTemplate.input || '');
+      }
+    } else {
+      setCode(currentExample.code);
+      setCustomInput(currentExample.input || '');
+    }
+    setError(null);
+    setAppState('idle');
+    player.setTimeline([]);
+  }, [activeMode, currentTemplate, currentExample, player]);
 
   // Resizable Divider Handlers
   const handleMouseDown = useCallback((e) => {
@@ -234,19 +346,20 @@ function App() {
                 <span className="app-logo-text">V-VISION</span>
               </div>
 
-              <ModeTabs activeMode={activeMode} onSelectMode={setActiveMode} />
+              <ModeTabs activeMode={activeMode} onSelectMode={handleSelectMode} />
 
-              {activeMode === 'code' && (
+              {(activeMode === 'code' || activeMode === 'custom') && (
                 <button
                   className="icon-btn-secondary mobile-reset-btn"
                   onClick={handleResetEditor}
-                  title="Reset code to default"
+                  title={activeMode === 'custom' ? 'Reset to template boilerplate' : 'Reset code to default'}
                 >
                   <RotateCcw size={13} />
                 </button>
               )}
             </div>
 
+            {/* Mobile Header Sub-Bar: Presets or Custom Templates */}
             {activeMode === 'code' && (
               <div className="mobile-header-sub">
                 <div className="example-selector-wrap mobile-selector">
@@ -259,6 +372,25 @@ function App() {
                     {EXAMPLE_PROGRAMS.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.category}: {p.name} ({p.complexity})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {activeMode === 'custom' && (
+              <div className="mobile-header-sub">
+                <div className="custom-selector-wrap mobile-selector">
+                  <PenTool size={13} className="text-emerald" />
+                  <select
+                    className="select-custom-template mobile-preset-select"
+                    value={selectedTemplateId}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                  >
+                    {CUSTOM_STARTER_TEMPLATES.map(t => (
+                      <option key={t.id} value={t.id}>
+                        Template: {t.name}
                       </option>
                     ))}
                   </select>
@@ -291,34 +423,7 @@ function App() {
               <div className="header-divider"></div>
 
               {/* Mode Switcher Tabs */}
-              <ModeTabs activeMode={activeMode} onSelectMode={setActiveMode} />
-
-              {activeMode === 'code' && (
-                <>
-                  <div className="header-divider"></div>
-                  {/* Preset Selector */}
-                  <div className="example-selector-wrap">
-                    <BookOpen size={14} className="selector-icon" />
-                    <select
-                      className="select-preset"
-                      value={selectedExampleId}
-                      onChange={handleExampleChange}
-                    >
-                      {EXAMPLE_PROGRAMS.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.category}: {p.name} ({p.complexity})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {currentExample && (
-                    <div className="example-description-pill" title={currentExample.description}>
-                      <span>{currentExample.description}</span>
-                    </div>
-                  )}
-                </>
-              )}
+              <ModeTabs activeMode={activeMode} onSelectMode={handleSelectMode} />
             </div>
 
             <div className="header-right">
@@ -340,11 +445,11 @@ function App() {
                 </button>
               </div>
 
-              {activeMode === 'code' && (
+              {(activeMode === 'code' || activeMode === 'custom') && (
                 <button
                   className="icon-btn-secondary"
                   onClick={handleResetEditor}
-                  title="Reset code to default"
+                  title={activeMode === 'custom' ? 'Reset to starter template' : 'Reset code to default'}
                 >
                   <RotateCcw size={13} />
                   <span>Reset</span>
@@ -417,9 +522,9 @@ function App() {
               <div className="editor-split-pane mobile-full-pane">
                 <CodeEditor
                   code={code}
-                  onCodeChange={setCode}
+                  onCodeChange={handleCodeChange}
                   customInput={customInput}
-                  onCustomInputChange={setCustomInput}
+                  onCustomInputChange={handleCustomInputChange}
                   highlightLine={appState === 'visualizing' ? currentLine : null}
                   isPlaying={player.isPlaying}
                   isLoading={isLoading}
@@ -427,13 +532,22 @@ function App() {
                   breakpoints={player.breakpoints}
                   onToggleBreakpoint={player.toggleBreakpoint}
                   currentEvent={player.currentEvent}
+                  isCustomMode={activeMode === 'custom'}
+                  customTemplates={CUSTOM_STARTER_TEMPLATES}
+                  selectedTemplateId={selectedTemplateId}
+                  onSelectTemplate={handleTemplateChange}
+                  onNewCustomCode={handleNewCustomCode}
+                  examples={EXAMPLE_PROGRAMS}
+                  selectedExampleId={selectedExampleId}
+                  onSelectExample={handleExampleChange}
+                  currentExample={currentExample}
                 />
               </div>
             )}
 
             {mobileActiveView === 'viz' && (
               <div className="viz-split-pane mobile-full-pane">
-                <ExplanationPanel code={code} isVisible={activeMode === 'code' && !!code} />
+                <ExplanationPanel code={code} isVisible={(activeMode === 'code' || activeMode === 'custom') && !!code} />
                 <VisualizationPanel
                   event={player.currentEvent}
                   prevEvent={player.prevEvent}
@@ -475,9 +589,9 @@ function App() {
             >
               <CodeEditor
                 code={code}
-                onCodeChange={setCode}
+                onCodeChange={handleCodeChange}
                 customInput={customInput}
-                onCustomInputChange={setCustomInput}
+                onCustomInputChange={handleCustomInputChange}
                 highlightLine={appState === 'visualizing' ? currentLine : null}
                 isPlaying={player.isPlaying}
                 isLoading={isLoading}
@@ -485,6 +599,15 @@ function App() {
                 breakpoints={player.breakpoints}
                 onToggleBreakpoint={player.toggleBreakpoint}
                 currentEvent={player.currentEvent}
+                isCustomMode={activeMode === 'custom'}
+                customTemplates={CUSTOM_STARTER_TEMPLATES}
+                selectedTemplateId={selectedTemplateId}
+                onSelectTemplate={handleTemplateChange}
+                onNewCustomCode={handleNewCustomCode}
+                examples={EXAMPLE_PROGRAMS}
+                selectedExampleId={selectedExampleId}
+                onSelectExample={handleExampleChange}
+                currentExample={currentExample}
               />
             </div>
 
@@ -501,7 +624,7 @@ function App() {
             )}
 
             <div className="viz-split-pane">
-              <ExplanationPanel code={code} isVisible={activeMode === 'code' && !!code} />
+              <ExplanationPanel code={code} isVisible={(activeMode === 'code' || activeMode === 'custom') && !!code} />
               <VisualizationPanel
                 event={player.currentEvent}
                 prevEvent={player.prevEvent}

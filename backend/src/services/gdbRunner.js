@@ -66,9 +66,9 @@ export async function runAndTrace(sourceCode, input = '') {
       const stdinContent = hasCustomInput ? input : "5\n10 20 30 40 50 60 70 80 90 100\nhello\nworld\n";
       writeFileSync(inPath, stdinContent, 'utf-8');
 
-      // Seamlessly redirect stdin to inName BEFORE main() starts using GCC constructor
+      // Seamlessly redirect stdin to inPath BEFORE main() starts using GCC constructor
       // Preserves original line numbering perfectly with #line directive
-      finalSource = `#include <stdio.h>\n__attribute__((constructor)) static void __v_init_stdin(void) {\n  freopen("${inName.replace(/\\/g, '/')}", "r", stdin);\n}\n#line 1 "${srcName}"\n${sourceCode}`;
+      finalSource = `#include <stdio.h>\n__attribute__((constructor)) static void __v_init_stdin(void) {\n  freopen("${inPath.replace(/\\/g, '/')}", "r", stdin);\n}\n#line 1 "${srcName}"\n${sourceCode}`;
     }
     writeFileSync(srcPath, finalSource, 'utf-8');
 
@@ -313,6 +313,11 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
 
     async function execute() {
       try {
+        // Configure GDB print options for reliable full array and string parsing
+        await sendQuery('-gdb-set print repeats 0');
+        await sendQuery('-gdb-set print elements 100');
+        await sendQuery('-gdb-set print null-stop on');
+
         // Insert breakpoint at main
         await sendQuery('-break-insert main');
 

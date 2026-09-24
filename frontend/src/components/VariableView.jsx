@@ -3,23 +3,48 @@ import { Cpu, Sparkles, TrendingUp, TrendingDown } from 'lucide-react';
 /**
  * VariableView — Ground-up rewrite based on Reference 1, Section 1
  *
- * Exact assignment animation from reference:
- *   Step 1: var box in neutral state → .box default
- *   Step 2: RHS expression appears with amber scanpulse → .box.compare
- *   Step 3: Expression collapses to value with green glow → .box.true  
- *   Step 4: Value bounces into var → .box.bounce (bounceIn animation)
- *
- * We show:
- *   - All current variables as glass boxes
- *   - New vars: .rv-box-bounce (bounceIn animation = new assignment)
- *   - Changed vars: .rv-box-changed (purple glow) with diff pill
- *   - Unchanged: .rv-box default neutral glass
- *
- * Color semantics from reference:
- *   New (init):   green glow (.box.true equiv)   
- *   Changed:      purple + bounceIn (.box.bounce equiv with purple instead of neutral)
- *   Unchanged:    neutral glass
+ * Visualizes scalar runtime stack variables for ANY arbitrary C program:
+ * - Dynamic type deduction (int, float, char, char*, bool, ptr)
+ * - Clean number and string formatting
+ * - New variables: .rv-var-box-new (green glow + bounceIn)
+ * - Changed variables: .rv-var-box-changed (purple glow + bounceIn) with diff pill and prev value crumb
+ * - Unchanged variables: neutral glass card
  */
+
+function detectVarType(val, name) {
+  if (typeof val === 'boolean') return 'bool';
+  if (typeof val === 'number') {
+    if (Number.isInteger(val)) return 'int';
+    return 'float';
+  }
+  if (typeof val === 'string') {
+    if (val.length === 1 || /^'.*'$/.test(val)) return 'char';
+    if (/^0x[0-9a-fA-F]+$/i.test(val)) return 'ptr';
+    return 'char*';
+  }
+  if (typeof val === 'object' && val !== null) {
+    if (Array.isArray(val)) return 'array';
+    return 'struct';
+  }
+  return 'var';
+}
+
+function formatVarValue(val) {
+  if (typeof val === 'number') {
+    if (!Number.isInteger(val)) {
+      return Number(val.toFixed(4)).toString();
+    }
+    return val.toString();
+  }
+  if (typeof val === 'string') {
+    if (val.length === 1 && !/^'.*'$/.test(val)) {
+      return `'${val}'`;
+    }
+    return val;
+  }
+  return String(val);
+}
+
 export default function VariableView({ variables, changes, newVariables }) {
   if (!variables || Object.keys(variables).length === 0) return null;
 
@@ -37,46 +62,54 @@ export default function VariableView({ variables, changes, newVariables }) {
         <span className="rv-count-pill">{displayVars.length}</span>
       </div>
 
-      {/* Variable grid — each var is a .box from Reference 1 */}
+      {/* Variable grid */}
       <div className="rv-var-grid">
         {displayVars.map(([name, value]) => {
-          const change  = changes?.find(c => c.name === name);
-          const isNew   = newVariables?.includes(name);
-          const isChgd  = !!change && !isNew;
+          const change = changes?.find(c => c.name === name);
+          const isNew = newVariables?.includes(name);
+          const isChgd = !!change && !isNew;
+          const varType = detectVarType(value, name);
 
-          // Numeric diff for arrow pill
+          // Numeric diff calculation
           let diff = null;
           if (change && typeof change.from === 'number' && typeof change.to === 'number') {
             diff = change.to - change.from;
           }
 
-          // Map to reference box states
           let boxState = 'neutral';
-          if (isNew)  boxState = 'new';      // green glow + bounce
-          if (isChgd) boxState = 'changed';  // purple glow + bounce
+          if (isNew) boxState = 'new';
+          if (isChgd) boxState = 'changed';
 
           return (
             <div key={name} className={`rv-var-box rv-var-box-${boxState}`}>
               {/* Type + name header */}
-              <div className="rv-var-header">
-                <span className="rv-var-type">int</span>
+              <div className="rv-var-box-header rv-var-header">
+                <span className="rv-var-type">{varType}</span>
                 <span className="rv-var-name">{name}</span>
-                {isNew  && <span className="rv-var-badge rv-badge-new"><Sparkles size={9}/> init</span>}
-                {isChgd && <span className="rv-var-badge rv-badge-chg">↑ changed</span>}
+                {isNew && (
+                  <span className="rv-var-pill-new rv-var-badge rv-badge-new">
+                    <Sparkles size={9} /> init
+                  </span>
+                )}
+                {isChgd && (
+                  <span className="rv-var-pill-chg rv-var-badge rv-badge-chg">
+                    ↑ changed
+                  </span>
+                )}
               </div>
 
-              {/* Value — large monospace */}
-              <div className="rv-var-value-row">
-                <span className="rv-var-value">
-                  {typeof value === 'number' ? value : String(value)}
+              {/* Value row */}
+              <div className="rv-var-val-row rv-var-value-row">
+                <span className="rv-var-val rv-var-value">
+                  {formatVarValue(value)}
                 </span>
 
-                {/* Diff pill (from reference concept: show delta) */}
+                {/* Diff pill */}
                 {diff !== null && (
-                  <span className={`rv-diff-pill ${diff >= 0 ? 'diff-pos' : 'diff-neg'}`}>
+                  <span className={`rv-var-pill-diff rv-diff-pill ${diff >= 0 ? 'rv-diff-pos diff-pos' : 'rv-diff-neg diff-neg'}`}>
                     {diff >= 0
-                      ? <><TrendingUp size={10}/> +{diff}</>
-                      : <><TrendingDown size={10}/> {diff}</>
+                      ? <><TrendingUp size={10} /> +{diff}</>
+                      : <><TrendingDown size={10} /> {diff}</>
                     }
                   </span>
                 )}
@@ -84,10 +117,10 @@ export default function VariableView({ variables, changes, newVariables }) {
 
               {/* Previous value crumb */}
               {isChgd && change && (
-                <div className="rv-var-crumb">
-                  <span className="crumb-from">{change.from}</span>
+                <div className="rv-var-prev rv-var-crumb">
+                  <span className="crumb-from">{formatVarValue(change.from)}</span>
                   <span className="crumb-arrow">→</span>
-                  <span className="crumb-to">{change.to}</span>
+                  <span className="crumb-to">{formatVarValue(change.to)}</span>
                 </div>
               )}
             </div>

@@ -14,7 +14,9 @@ import {
   Trash2, 
   Smartphone, 
   Monitor,
-  Code2
+  Code2,
+  PenTool,
+  BookOpen
 } from 'lucide-react';
 
 export default function CodeEditor({ 
@@ -28,7 +30,16 @@ export default function CodeEditor({
   onVisualize, 
   breakpoints = new Set(),
   onToggleBreakpoint,
-  currentEvent
+  currentEvent,
+  isCustomMode = false,
+  customTemplates = [],
+  selectedTemplateId = 'blank',
+  onSelectTemplate,
+  onNewCustomCode,
+  examples = [],
+  selectedExampleId,
+  onSelectExample,
+  currentExample
 }) {
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
@@ -262,10 +273,18 @@ export default function CodeEditor({
     <div className="panel code-panel">
       <div className="panel-header">
         <div className="panel-title-group">
-          <div className="panel-title">
-            <span className="panel-title-dot"></span>
-            C Source Code
-          </div>
+          {isCustomMode ? (
+            <div className="panel-title panel-title-custom">
+              <PenTool size={14} className="text-emerald" />
+              <span>Write Your Own Code</span>
+              <span className="badge-custom-playground">Playground</span>
+            </div>
+          ) : (
+            <div className="panel-title">
+              <span className="panel-title-dot"></span>
+              C Source Code
+            </div>
+          )}
           {highlightLine && (
             <div className="active-line-badge">
               <span className="pulse-dot"></span>
@@ -337,6 +356,65 @@ export default function CodeEditor({
           </button>
         </div>
       </div>
+
+      {/* Custom Mode Starter Templates Banner */}
+      {isCustomMode && customTemplates.length > 0 && (
+        <div className="custom-editor-banner">
+          <div className="template-pills-row">
+            <span className="template-pills-label">Templates:</span>
+            {customTemplates.map(tpl => (
+              <button
+                key={tpl.id}
+                type="button"
+                className={`template-pill-btn ${selectedTemplateId === tpl.id ? 'active' : ''}`}
+                onClick={() => onSelectTemplate?.(tpl.id)}
+                title={tpl.description}
+              >
+                {tpl.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="template-pill-btn btn-new-code"
+              onClick={onNewCustomCode}
+              title="Start fresh with a clean blank template"
+            >
+              + Blank
+            </button>
+          </div>
+
+          <div className="custom-tip-badge">
+            <Sparkles size={11} className="text-amber" />
+            <span>Animate <span className="tip-highlight">ANY C program</span> live</span>
+          </div>
+        </div>
+      )}
+
+      {/* Preset Algorithm Banner in Algorithms & Presets Mode */}
+      {!isCustomMode && examples.length > 0 && (
+        <div className="custom-editor-banner preset-editor-banner">
+          <div className="template-pills-row">
+            <span className="template-pills-label">Algorithm:</span>
+            <div className="example-selector-wrap-inline">
+              <BookOpen size={13} className="selector-icon" />
+              <select
+                className="select-preset-inline"
+                value={selectedExampleId}
+                onChange={onSelectExample}
+              >
+                {examples.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.category}: {p.name} ({p.complexity})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {currentExample?.description && (
+              <span className="preset-inline-desc">{currentExample.description}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 1-Tap Quick Action Toolbar (Mobile & Desktop) */}
       <div className="editor-quick-toolbar">
