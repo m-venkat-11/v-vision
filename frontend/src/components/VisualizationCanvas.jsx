@@ -20,6 +20,7 @@ import HashTableVisualizer from './HashTableVisualizer';
 import BitVisualizer from './BitVisualizer';
 import DPVisualizer from './DPVisualizer';
 import RecursionVisualizer from './RecursionVisualizer';
+import RecursionTreeView from './RecursionTreeView';
 import PointerSwapVisualizer from './PointerSwapVisualizer';
 
 export default function VisualizationCanvas({
@@ -186,19 +187,20 @@ export default function VisualizationCanvas({
     return pVars;
   }, [variables, arrays, event]);
 
-  // Detect Stack Data Structure (array named stack/stk or top pointer + any array)
+  // Detect Stack Data Structure (array named stack/stk or top pointer with push/pop operations)
   const stackData = useMemo(() => {
     // Check if stack exists anywhere in execution
-    const hasStackArray = timeline.some(e => e.arrays && Object.keys(e.arrays).some(k => /^(stack|stk)\b/i.test(k))) ||
-                          timeline.some(e => e.variables && ('top' in e.variables || 'sp' in e.variables));
-    if (!hasStackArray) return null;
+    const hasExplicitStackArray = timeline.some(e => e.arrays && Object.keys(e.arrays).some(k => /^(stack|stk)\b/i.test(k)));
+    const hasTopWithPushPop = timeline.some(e => e.variables && ('top' in e.variables || 'sp' in e.variables)) &&
+                              timeline.some(e => /\b(push|pop|stack|stk)\b/i.test(e.sourceLine || ''));
+    if (!hasExplicitStackArray && !hasTopWithPushPop) return null;
 
     let stackName = 'stack';
     let capacity = 5;
     for (const ev of timeline) {
       if (ev.arrays) {
         for (const [k, arr] of Object.entries(ev.arrays)) {
-          if (/^(stack|stk)\b/i.test(k) && Array.isArray(arr)) {
+          if (/^(stack|stk)\b/i.test(k) && Array.isArray(arr) && arr.length > 0) {
             stackName = k;
             capacity = arr.length;
             break;
@@ -219,7 +221,7 @@ export default function VisualizationCanvas({
       }
     }
 
-    let currentArray = new Array(capacity).fill(0);
+    let currentArray = null;
     for (let i = currentStep; i >= 0; i--) {
       const ev = timeline[i];
       if (ev?.arrays?.[stackName] && Array.isArray(ev.arrays[stackName])) {
@@ -227,12 +229,15 @@ export default function VisualizationCanvas({
         break;
       }
     }
+    if (!currentArray || currentArray.length === 0) {
+      currentArray = new Array(Math.max(capacity, (currentTop >= 0 ? currentTop + 1 : 0))).fill(0);
+    }
 
     return {
       name: stackName,
       array: currentArray,
       top: currentTop,
-      capacity
+      capacity: Math.max(capacity, currentArray.length)
     };
   }, [arrays, variables, timeline, currentStep]);
 
@@ -378,13 +383,20 @@ export default function VisualizationCanvas({
         </div>
       )}
 
-      {/* 0a. Recursion Tree (Shown FIRST for recursive programs — faithful cascading call tree) */}
+      {/* 0a. Recursion Tree & Unwinding (Shown for recursive programs — faithful cascading call tree) */}
       {hasRecursion && (
-        <RecursionVisualizer
-          timeline={timeline}
-          currentStep={currentStep}
-          animationDuration={animationDuration}
-        />
+        <>
+          <RecursionVisualizer
+            timeline={timeline}
+            currentStep={currentStep}
+            animationDuration={animationDuration}
+          />
+          <RecursionTreeView
+            timeline={timeline}
+            currentStep={currentStep}
+            animationDuration={animationDuration}
+          />
+        </>
       )}
 
       {/* 0b. Pointer Swap Visualizer (shown before bitwise for swap programs) */}
@@ -478,17 +490,29 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* 9. Array Iteration View (When program uses arrays not classified as stack/queue/dp/hash) */}
-      {hasArrays && !stackData && !queueData && !hasDP && !hasHashTable && (
-        <ArrayView
-          arrays={arrays}
-          highlight={highlight}
-          changes={arrayChanges}
-          variables={variables}
-          animationDuration={animationDuration}
-          pointerVars={pointerVars}
-        />
-      )}
+      {/* 9. Array Iteration View: Shows arrays. Excludes only the specific array being visualized in a specialized container (Stack/Queue/DP) so any input or data arrays remain fully visible! */}
+      {hasArrays && (() => {
+        const displayArrays = {};
+        for (const [name, val] of Object.entries(arrays || {})) {
+          if (stackData && name === stackData.name) continue;
+          if (queueData && name === queueData.name) continue;
+          if (hasDP && /^(dp|memo|fib|table)\b/i.test(name)) continue;
+          displayArrays[name] = val;
+        }
+        if (Object.keys(displayArrays).length > 0) {
+          return (
+            <ArrayView
+              arrays={displayArrays}
+              highlight={highlight}
+              changes={arrayChanges}
+              variables={variables}
+              animationDuration={animationDuration}
+              pointerVars={pointerVars}
+            />
+          );
+        }
+        return null;
+      })()}
 
       {/* Condition Evaluation (Shown for branching programs without specialized DSA containers) */}
       {!hasRecursion && !stackData && !queueData && !hasPointerSwap && (
@@ -530,8 +554,8 @@ export default function VisualizationCanvas({
         />
       )}
 
-      {/* Unified Call Stack View (GDB Function Call Stack — hidden for Recursion and Stack DSA to avoid confusion) */}
-      {hasStackOrCalls && !hasRecursion && !stackData && (
+      {/* Unified Call Stack View (GDB Function Call Stack — shown for function execution when call stack has frames) */}
+      {hasStackOrCalls && !hasRecursion && (
         <StackDiagramView
           callStack={callStack || []}
           currentEvent={event}

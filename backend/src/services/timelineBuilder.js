@@ -36,27 +36,65 @@ function isGarbageValue(val) {
   if (val === 32767 || val === -32768) return true;
   if (val === -134542720 || val === 4194432) return true;
   if (val === 2147483647 || val === -2147483648) return true;
-  if (Math.abs(val) > 2000000) return true;
+  // Very large absolute values are almost certainly uninitialized stack memory
+  // (safe: real educational programs rarely produce ±1M for unassigned vars;
+  //  assigned vars pass through regardless via the isVariableAssigned check)
+  if (Math.abs(val) > 1000000) return true;
   return false;
 }
 
 function findDeclarations(sourceLines) {
   const decls = {};
   if (!Array.isArray(sourceLines)) return decls;
-  const typeRegex = /^\s*(?:const\s+)?(?:int|char|float|double|long|short|unsigned|signed|size_t|struct\s+\w+)\b/;
+  // Match lines that start with a C type keyword
+  const typePrefix = /^\s*(?:const\s+)?(?:unsigned\s+)?(?:signed\s+)?(?:int|char|float|double|long|short|size_t|struct\s+\w+)\s+/;
   for (let l = 0; l < sourceLines.length; l++) {
     const line = sourceLines[l];
-    if (line.trim().startsWith('#') || !typeRegex.test(line)) continue;
+    if (line.trim().startsWith('#')) continue;
     if (/struct\s+\w+\s*\{/.test(line)) continue;
-    if (/\w+\s*\([^)]*\)\s*\{?$/.test(line.trim()) && !line.includes('=')) continue;
 
-    const parts = line.split(',');
+    // Check for for-loop declarations: for (int i = 0; ...)
+    const forDeclMatch = line.match(/for\s*\(\s*(?:int|char|float|double|long|short|unsigned)\s+(\w+)\s*=/);
+    if (forDeclMatch && forDeclMatch[1]) {
+      const varName = forDeclMatch[1];
+      if (!decls[varName]) {
+        decls[varName] = { line: l + 1, hasInit: true, isChar: false };
+      }
+      continue;
+    }
+
+    // Standard declarations: type varName ...
+    if (!typePrefix.test(line)) continue;
+    // Skip function definitions like: int main() { or void swap(int *a, ...) {
+    if (/\w+\s*\([^)]*\)\s*\{?\s*$/.test(line.trim()) && !line.includes('=')) continue;
+
+    // Strip the type prefix to get the variable declarations part
+    const afterType = line.replace(typePrefix, '');
+
+    // Split by top-level commas (respecting braces for array initializers like {1,2,3})
+    const parts = [];
+    let current = '';
+    let depth = 0;
+    for (let ci = 0; ci < afterType.length; ci++) {
+      const ch = afterType[ci];
+      if (ch === '{' || ch === '(' || ch === '[') depth++;
+      else if (ch === '}' || ch === ')' || ch === ']') depth--;
+      else if (ch === ',' && depth === 0) {
+        parts.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    if (current.trim()) parts.push(current.trim());
+
     for (const part of parts) {
-      const m = part.match(/\*?\s*([a-zA-Z_]\w*)\s*(?:\[.*\])?/);
-      if (m && m[1] && !['main', 'return', 'if', 'for', 'while', 'const'].includes(m[1])) {
+      // Match: optional *, variable name, optional [size], before = or ; or end
+      const m = part.match(/^\*?\s*([a-zA-Z_]\w*)\s*(?:\[.*?\])?\s*(?:=|;|$)/);
+      if (m && m[1] && !['main', 'return', 'if', 'for', 'while', 'const', 'void'].includes(m[1])) {
         const varName = m[1];
         if (!decls[varName]) {
-          const hasInit = part.includes('=') || (line.includes('=') && parts.length === 1);
+          const hasInit = part.includes('=');
           decls[varName] = {
             line: l + 1,
             hasInit,
@@ -276,7 +314,42 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
 
   for (let i = 0; i < rawSteps.length; i++) {
     const raw = rawSteps[i];
-    const { line, sourceLine, variables, arrays, structs, pointers, callStack, callDepth, function: funcName } = raw;
+    const { line, sourceLine, callStack, callDepth, function: funcName } = raw;
+
+    // ─── POST-EXECUTION STATE SHIFT ──────────────────────────────────
+    // GDB captures variable state BEFORE the current line executes.
+    // To display values AFTER execution (matching PythonTutor / C Tutor),
+    // use the NEXT step's captured values when still in the same context.
+    // Smart per-variable fallback: if the shift introduces garbage (e.g. a
+    // new same-named loop variable enters scope), keep the pre-shift value.
+    const nextRaw = (i + 1 < rawSteps.length) ? rawSteps[i + 1] : null;
+    const sameCtx = nextRaw &&
+      nextRaw.function === funcName &&
+      nextRaw.callDepth === callDepth &&
+      !nextRaw.isRuntimeError;
+
+    const variables = {};
+    if (sameCtx) {
+      const nv = nextRaw.variables || {};
+      const cv = raw.variables || {};
+      for (const k of new Set([...Object.keys(nv), ...Object.keys(cv)])) {
+        if (k in nv) {
+          // If shifted value is garbage but pre-shift value is clean, keep pre-shift
+          if (isGarbageValue(nv[k]) && k in cv && !isGarbageValue(cv[k])) {
+            variables[k] = cv[k];
+          } else {
+            variables[k] = nv[k];
+          }
+        } else {
+          variables[k] = cv[k];
+        }
+      }
+    } else {
+      Object.assign(variables, raw.variables || {});
+    }
+    const arrays = sameCtx ? (nextRaw.arrays || {}) : (raw.arrays || {});
+    const structs = sameCtx ? (nextRaw.structs || {}) : (raw.structs || {});
+    const pointers = sameCtx ? (nextRaw.pointers || {}) : (raw.pointers || {});
 
     // Check for runtime error step
     if (raw.isRuntimeError) {
@@ -307,12 +380,13 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     }
 
     // Filter out uninitialized locals before their declaration line
-    const isLoopHeader = /^(for|while)\s*\(/.test(sourceLine);
+    // With post-execution state shift, values are valid ON the declaration line
     const activeVariables = {};
     for (const [k, v] of Object.entries(variables || {})) {
       const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
       const declLine = declInfo?.line;
-      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+      // For non-main functions, trust GDB's frame-scoped locals/args directly
+      if (funcName !== 'main' || !declLine || line >= declLine) {
         const assigned = isVariableAssigned(k, line, sourceLines, declInfo);
         // Suppress uninitialized stack garbage
         if (isGarbageValue(v) && !assigned) {
@@ -326,15 +400,8 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     for (const [k, v] of Object.entries(arrays || {})) {
       const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
       const declLine = declInfo?.line;
-      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+      if (funcName !== 'main' || !declLine || line >= declLine) {
         activeArrays[k] = v;
-      }
-    }
-
-    // If a string variable is in activeVariables, ensure its character array is in activeArrays
-    for (const [k, v] of Object.entries(activeVariables)) {
-      if (typeof v === 'string' && v.length > 0 && !activeArrays[k]) {
-        activeArrays[k] = v.split('');
       }
     }
 
@@ -342,7 +409,7 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     for (const [k, v] of Object.entries(structs || {})) {
       const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
       const declLine = declInfo?.line;
-      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+      if (funcName !== 'main' || !declLine || line >= declLine) {
         activeStructs[k] = v;
       }
     }
@@ -351,8 +418,25 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     for (const [k, v] of Object.entries(pointers || {})) {
       const declInfo = typeof decls[k] === 'object' ? decls[k] : { line: decls[k], hasInit: false };
       const declLine = declInfo?.line;
-      if (!declLine || (isLoopHeader ? line >= declLine : line > declLine)) {
+      if (funcName !== 'main' || !declLine || line >= declLine) {
         activePointers[k] = v;
+      }
+    }
+
+    // If a genuine string/char array variable is in activeVariables, ensure its character array is in activeArrays
+    // (Do not convert pointer addresses like "0x61ff1c" or NULL into character arrays)
+    for (const [k, v] of Object.entries(activeVariables)) {
+      if (
+        typeof v === 'string' &&
+        v.length > 0 &&
+        !activeArrays[k] &&
+        !activePointers[k] &&
+        !pointers?.[k] &&
+        !v.startsWith('0x') &&
+        v !== 'NULL' &&
+        (decls[k]?.isChar || (!v.startsWith('0x') && !/^[0-9a-fA-Fx]+$/.test(v)))
+      ) {
+        activeArrays[k] = v.split('');
       }
     }
 
@@ -425,11 +509,14 @@ export function buildTimeline(rawSteps, sourceLines, heapState) {
     // 7. Arrays
     else if (changedArrays.length > 0) {
       eventType = EventType.ARRAY_CHANGED;
+    } else if (/\w+\[[^\]]+\]\s*=[^=]/.test(sourceLine)) {
+      // Source-line pattern: assignment to array element (arr[i] = ...)
+      eventType = EventType.ARRAY_CHANGED;
     } else if (/\w+\[[^\]]+\]/.test(sourceLine)) {
       eventType = EventType.ARRAY_ACCESS;
     }
     // 8. Variable Created / Changed
-    else if (newVars.length > 0 && /^(int|float|double|char)\s+/.test(sourceLine.trim())) {
+    else if (newVars.length > 0) {
       eventType = EventType.VARIABLE_CREATED;
     } else if (changedVars.length > 0) {
       eventType = EventType.VARIABLE_CHANGED;

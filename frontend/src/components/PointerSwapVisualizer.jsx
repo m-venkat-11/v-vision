@@ -19,15 +19,23 @@ export default function PointerSwapVisualizer({
 
   // Determine swap pair across timeline
   const { varA, varB } = useMemo(() => {
-    // Check candidate pairs
+    // 1. Look for swap(&var1, &var2) directly from source code call in timeline
+    for (const ev of timeline) {
+      const m = (ev.sourceLine || '').match(/swap\s*\(\s*&([a-zA-Z_]\w*)\s*,\s*&([a-zA-Z_]\w*)\s*\)/);
+      if (m && m[1] && m[2]) {
+        return { varA: m[1], varB: m[2] };
+      }
+    }
+    // 2. Check candidate pairs
     const candidatePairs = [['x', 'y'], ['a', 'b'], ['num1', 'num2'], ['first', 'second'], ['p', 'q']];
     for (const [va, vb] of candidatePairs) {
       const hasBoth = timeline.some(e => e.variables && va in e.variables) &&
                       timeline.some(e => e.variables && vb in e.variables);
       if (hasBoth) return { varA: va, varB: vb };
     }
-    // Check current variables
-    const scalars = Object.keys(variables).filter(k => !['argc', 'argv', 'temp', 't'].includes(k));
+    // 3. Fallback to any two scalars in main or variables
+    const mainVars = timeline.find(e => e.function === 'main')?.variables || variables;
+    const scalars = Object.keys(mainVars).filter(k => !['argc', 'argv', 'temp', 't'].includes(k));
     if (scalars.length >= 2) return { varA: scalars[0], varB: scalars[1] };
     return { varA: 'x', varB: 'y' };
   }, [timeline, variables]);
@@ -56,17 +64,17 @@ export default function PointerSwapVisualizer({
   const tempVar = 'temp' in variables ? 'temp' : ('t' in variables ? 't' : null);
   const valTemp = tempVar ? variables[tempVar] : undefined;
 
-  // Detect swap phase
-  const isAssignTemp = /temp\s*=\s*\*?a|\bt\s*=\s*\*?a/.test(sourceLine);
-  const isAssignA    = /\*a\s*=\s*\*?b|\ba\s*=\s*b/.test(sourceLine);
-  const isAssignB    = /\*b\s*=\s*temp|\bb\s*=\s*t/.test(sourceLine);
+  // Detect swap phase with arbitrary pointer param names (*a, *b, *x, *y, *p, *q, etc.)
+  const isAssignTemp = /(?:temp|t)\s*=\s*\*\w+/.test(sourceLine);
+  const isAssignA    = /\*\w+\s*=\s*\*\w+/.test(sourceLine);
+  const isAssignB    = /\*\w+\s*=\s*(?:temp|t)\b/.test(sourceLine);
   const isSwapping   = isAssignTemp || isAssignA || isAssignB || /swap\s*\(/.test(sourceLine);
 
   // Status message
   const statusMsg = useMemo(() => {
-    if (isAssignTemp) return `Step 1: Storing original ${varA} (${valTemp ?? valA}) into temporary holding register`;
-    if (isAssignA)    return `Step 2: Copying ${varB} (${valB}) into memory of ${varA}`;
-    if (isAssignB)    return `Step 3: Restoring saved temporary (${valTemp ?? valA}) into memory of ${varB}`;
+    if (isAssignTemp) return `Step 1: Storing original ${varA} (${valTemp ?? valA}) into temporary holding variable`;
+    if (isAssignA)    return `Step 2: Copying value of ${varB} (${valB}) into address of ${varA}`;
+    if (isAssignB)    return `Step 3: Restoring saved temporary (${valTemp ?? valA}) into address of ${varB}`;
     if (/swap\s*\(/.test(sourceLine)) return `Calling swap(&${varA}, &${varB}) — passing memory addresses`;
     return `Variables ${varA} = ${valA} and ${varB} = ${valB} — Memory state`;
   }, [isAssignTemp, isAssignA, isAssignB, sourceLine, varA, varB, valA, valB, valTemp]);

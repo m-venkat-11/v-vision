@@ -25,6 +25,17 @@ export default function RecursionVisualizer({ timeline = [], currentStep = 0, an
 
     let recFunc = Object.keys(funcCounts).sort((a, b) => funcCounts[b] - funcCounts[a])[0] || 'factorial';
 
+    // Detect return formula from source code (e.g., sum for fibonacci, product for factorial)
+    let formulaPattern = 'product';
+    for (const ev of timeline) {
+      const line = (ev.sourceLine || '').trim();
+      if (line.includes('return') && line.includes(recFunc)) {
+        if (line.includes('+')) formulaPattern = 'sum';
+        else if (line.includes('*')) formulaPattern = 'product';
+        break;
+      }
+    }
+
     // Collect all recursive invocations in order of call
     // A new frame is identified by an increase in depth with func === recFunc
     const frames = [];
@@ -106,7 +117,7 @@ export default function RecursionVisualizer({ timeline = [], currentStep = 0, an
       });
     }
 
-    return { funcName: recFunc, allCallFrames: frames };
+    return { funcName: recFunc, allCallFrames: frames, formulaPattern };
   }, [timeline]);
 
   // Compute live status of each frame at currentStep
@@ -126,12 +137,12 @@ export default function RecursionVisualizer({ timeline = [], currentStep = 0, an
       const argEntry = Object.entries(vars).find(([k]) => !['argc', 'argv', 'result'].includes(k));
       const argVal = argEntry ? argEntry[1] : (frame.depth === 1 ? 'n' : '?');
 
-      // Return expression computation (e.g., 4 * 6 = 24)
+      // Return expression computation (e.g., 4 * 6 = 24 or fib(2)=1)
       let returnExpr = null;
       if (isReturned && typeof frame.returnValue !== 'undefined') {
         returnExpr = `${frame.returnValue}`;
       } else if (frame.isBaseCase && reached && (typeof argVal === 'number' && argVal <= 1)) {
-        returnExpr = '1';
+        returnExpr = formulaPattern === 'sum' ? `${argVal}` : '1';
       }
 
       return {
@@ -143,7 +154,7 @@ export default function RecursionVisualizer({ timeline = [], currentStep = 0, an
         returnExpr
       };
     });
-  }, [allCallFrames, timeline, currentStep, funcName]);
+  }, [allCallFrames, timeline, currentStep, funcName, formulaPattern]);
 
   return (
     <div className="rc-card">
@@ -198,7 +209,11 @@ export default function RecursionVisualizer({ timeline = [], currentStep = 0, an
                     {/* Expression badge */}
                     {typeof frame.argVal === 'number' && (
                       <span className="rc-expr-badge">
-                        {frame.argVal > 1 ? `${frame.argVal} × ${frame.func}(${frame.argVal - 1})` : '1'}
+                        {frame.argVal <= 1
+                          ? (formulaPattern === 'sum' ? `${frame.argVal}` : '1')
+                          : formulaPattern === 'sum'
+                            ? `${frame.func}(${frame.argVal - 1}) + ${frame.func}(${frame.argVal - 2})`
+                            : `${frame.argVal} × ${frame.func}(${frame.argVal - 1})`}
                       </span>
                     )}
 

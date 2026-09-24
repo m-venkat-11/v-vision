@@ -151,13 +151,14 @@ function sanitizeError(msg, srcPath, exePath) {
 function extractGlobalVarNames(sourceLines) {
   const globals = [];
   let braceDepth = 0;
+  const typePrefix = /^\s*(?:const\s+)?(?:unsigned\s+)?(?:signed\s+)?(?:int|char|float|double|long|short|size_t|bool|void|struct\s+\w+)\s+/;
   
   for (let i = 0; i < sourceLines.length; i++) {
     const raw = sourceLines[i];
     const line = raw.trim();
     
     // Skip preprocessor, includes, typedefs, comments
-    if (/^#|^\/\/|^\/\*|^\*|^$/.test(line)) {
+    if (/^#|^\/\/|^\/\*|^\*|^$|^typedef\b/.test(line)) {
       const opens = (raw.match(/{/g) || []).length;
       const closes = (raw.match(/}/g) || []).length;
       braceDepth += opens - closes;
@@ -168,22 +169,37 @@ function extractGlobalVarNames(sourceLines) {
     const closes = (raw.match(/}/g) || []).length;
     
     // Only process file-scope declarations (braceDepth === 0 BEFORE this line)
-    if (braceDepth === 0) {
-      // Match: int varName, int arr[N], char str[N] — but not function decls
-      // Pattern: type_keyword varname (optionally [size]) ;
-      const varDecl = line.match(/^(?:int|float|double|char|long|short|unsigned|struct\s+\w+)\s+(\w+)(?:\s*\[\d+\])?(?:\s*=\s*[^;]+)?;/);
-      if (varDecl) {
-        const varName = varDecl[1];
-        // Skip if this looks like a function definition on the same line (has open paren before open brace)
-        if (!line.includes('(') || line.indexOf(';') < line.indexOf('(')) {
-          globals.push(varName);
-        }
+    if (braceDepth === 0 && typePrefix.test(line)) {
+      // Skip function definitions (multi-line or single-line) and function prototypes
+      // e.g. void push(int x) { ... } or int sum(int a, int b);
+      if (/\w+\s*\([^)]*\)/.test(line) && (!line.includes('=') || line.indexOf('(') < line.indexOf('='))) {
+        braceDepth += opens - closes;
+        if (braceDepth < 0) braceDepth = 0;
+        continue;
       }
       
-      // Also match simple pointer decls: int *head = NULL;
-      const ptrDecl = line.match(/^(?:int|float|double|char|long|short|unsigned|struct\s+\w+)\s+\*+(\w+)(?:\s*=\s*[^;]+)?;/);
-      if (ptrDecl) {
-        globals.push(ptrDecl[1]);
+      const afterType = line.replace(typePrefix, '').replace(/;.*$/, '');
+      const parts = [];
+      let current = '';
+      let depth = 0;
+      for (let ci = 0; ci < afterType.length; ci++) {
+        const ch = afterType[ci];
+        if (ch === '{' || ch === '(' || ch === '[') depth++;
+        else if (ch === '}' || ch === ')' || ch === ']') depth--;
+        else if (ch === ',' && depth === 0) {
+          parts.push(current.trim());
+          current = '';
+          continue;
+        }
+        current += ch;
+      }
+      if (current.trim()) parts.push(current.trim());
+
+      for (const part of parts) {
+        const m = part.match(/^\*?\s*([a-zA-Z_]\w*)/);
+        if (m && m[1] && !['main', 'return', 'if', 'for', 'while', 'const', 'void'].includes(m[1])) {
+          globals.push(m[1]);
+        }
       }
     }
     
@@ -498,7 +514,7 @@ function stepThroughGDB(exeName, sourceLines, workDir) {
               const gRes = await sendQuery(`-data-evaluate-expression ${gName}`);
               const gVal = parseExpressionValue(gRes.join('\n'));
               
-              if (!gVal || gVal.startsWith('<') || gVal.includes('No symbol')) continue;
+              if (!gVal || gVal.startsWith('<') || gVal.includes('<') || gVal.includes('No symbol') || /\{\s*\w+.*\(/.test(gVal)) continue;
               
               // Array (e.g., "{10, 20, 30, 0, 0}")
               if (gVal.startsWith('{') && !gVal.includes('=')) {
